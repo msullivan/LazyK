@@ -8,8 +8,10 @@ import Data.Char
 import Data.List
 import System.Exit
 import System(getArgs)
-import Control.Applicative
 
+-- Really, every Comb should just be a function Comb -> Comb.
+-- However, we need to be able to extract an Int from a church numeral,
+-- so we need Nat.
 data Comb = Func (Comb -> Comb)
           | Nat Int
 
@@ -20,28 +22,30 @@ ap (Func c1) = c1
 getNat :: Comb -> Int
 getNat (Nat n) = n
 
--- Implementation of the combinators
+---- Implementation of the combinators
 i :: Comb
 i = Func id
 k :: Comb
 k = Func (\x -> Func (\_ -> x))
 s :: Comb
 s = Func (\x -> Func (\y -> Func (\z -> (x $$ z) $$ (y $$ z))))
--- The hacky bullshit combinator
+-- The hacky bullshit combinator - used to extract useful numbers from church numerals
 inc :: Comb
 inc = Func (\(Nat n) -> Nat (n+1))
 
+---- Useful functions for constructing and destructing combinators
 car :: Comb -> Comb
 car e = e $$ k
 cdr :: Comb -> Comb
 cdr e = e $$ (k $$ i)
-
 cons :: Comb -> Comb -> Comb
 cons x xs = s $$ (s $$ i $$ (k $$ x)) $$ (k $$ xs)
 
-sksk = s $$ (k $$ s) $$ k 
 churchIncrement :: Comb -> Comb
-churchIncrement c = s $$ sksk $$ c
+churchIncrement c = s $$ (s $$ (k $$ s) $$ k) $$ c
+fromChurchNumeral :: Comb -> Int
+fromChurchNumeral c = getNat $ c $$ inc $$ Nat 0
+
 
 churchNumerals :: [Comb]
 churchNumerals = iterate churchIncrement (k $$ i)
@@ -53,14 +57,13 @@ getChurchNumeral :: Int -> Comb
 getChurchNumeral n | n < 0 || n > 256 = getChurchNumeral 256
 getChurchNumeral n = churchNumeralTable ! n
 
-fromChurchNumeral :: Comb -> Int
-fromChurchNumeral c = getNat $ c $$ inc $$ Nat 0
-
 -- what should nil be??
 encodeList :: [Comb] -> Comb
 encodeList = foldr cons i
 decodeList :: Comb -> [Comb]
 decodeList c = car c : decodeList (cdr c)
+
+---- The core of the interpreter. The bits that drive the computation.
 
 transformInput :: String -> Comb
 transformInput l = encodeList $ map (getChurchNumeral . ord) l ++ repeat (getChurchNumeral 256)
@@ -73,6 +76,14 @@ outputCharacter 256 = exitSuccess
 outputCharacter n | n > 256 = exitWith $ ExitFailure (n-256)
 outputCharacter n = putChar (chr n)
 
+-- runComb is what drives everything
+runComb :: Comb -> IO ()
+runComb c = do
+  input <- getContents
+  let c' = c $$ transformInput input
+  mapM_ outputCharacter $ transformOutput c'
+
+---- An expression language with a conventional representation and a parser for it.
 data Expr = S | K | I | App Expr Expr
           deriving Show
 
@@ -115,18 +126,14 @@ parse' nested string =
   let (exps, rest) = collectAdjacent nested string
   in (foldl1 App exps, rest)
 
+-- Strip out whitespace and comment lines
 stripNonsense :: String -> String
 stripNonsense = filter (not . isSpace) . unlines . filter (not . isPrefixOf "#") . lines
 
 parse :: String -> Expr
 parse = fst . parse' False . stripNonsense
 
--- runComb is what drives everything
-runComb :: Comb -> IO ()
-runComb c = do
-  input <- getContents
-  let c' = c $$ transformInput input
-  mapM_ outputCharacter $ transformOutput c'
+-- Utilities for running programs.
 
 runString :: String -> IO ()
 runString = runComb . exprToComb . parse
