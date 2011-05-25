@@ -30,12 +30,27 @@
 //    stream.
 //
 
+#define DEBUG_COUNTERS 1
 
 #include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <ctype.h>
+
+#if DEBUG_COUNTERS
+static int news = 0;
+static int allocs = 0;
+static int frees = 0;
+static int prim_apps = 0;
+static int part_apps = 0;
+static int ref_incs = 0;
+static int ref_decs = 0;
+
+#define INC_COUNTER(n) ((n)++)
+#else
+#define INC_COUNTER(n)
+#endif
 
 
 class Expr {
@@ -57,6 +72,7 @@ public:
 	enum Type { A, K, K1, S, S1, S2, I1, LazyRead, Inc, Num, Free } type;
 
 	static void* operator new(unsigned) {
+		INC_COUNTER(news);
 		Expr* result = free_list;
 		if (result) {
 			free_list = result->arg1;
@@ -68,11 +84,13 @@ public:
 
 	// caller keeps original ref plus returned ref
 	Expr* dup() {
+		INC_COUNTER(ref_incs);
 		++refcnt;
 		return this;
 	}
 	// caller loses original ref
 	void deref() {
+		INC_COUNTER(ref_decs);
 		if (--refcnt == 0) {
 			free();
 		}
@@ -142,10 +160,24 @@ Expr Inc(Expr::Inc);
 Expr Zero(Expr::Num);
 
 
+// Roots
+// we need 2 roots for toplevel and church2int,
+// and then 2 per simultaneous invocation of partial_eval.
+// partial_eval only recurses as deep as the biggest number printed,
+// which can't /reasonably/ be above 512. This should be more than enough.
+#define MAX_ROOTS 10000
+static Expr *roots[MAX_ROOTS];
+static Expr **toplevel_root = &roots[0];
+static Expr **church2int_root = &roots[1];
+static int root_stack_top = 2;
+static Expr* cached_church_chars[257] = { KI.dup(), I.dup() };
+
+
 Expr* Expr::alloc() {
 	enum { blocksize = 10000 };
 	static Expr* p = 0;
 	static Expr* end = 0;
+	INC_COUNTER(allocs);
 	if (p >= end) {
 		p = (Expr*)malloc(blocksize*sizeof(Expr));
 		if (p == 0) {
@@ -220,8 +252,6 @@ Expr* make_church_char(int ch) {
 		ch = 256;
 	}
 
-	static Expr* cached_church_chars[257] = { KI.dup(), I.dup() };
-
 	if (cached_church_chars[ch] == 0) {
 		cached_church_chars[ch] = new Expr(Expr::S2, SKSK.dup(), make_church_char(ch-1));
 	}
@@ -229,15 +259,16 @@ Expr* make_church_char(int ch) {
 }
 
 
-Expr* g_expr;
-
 
 // This function modifies the object in-place so that
 // all references to it see the new version.
 
 void Expr::partial_eval_primitive_application() {
+	INC_COUNTER(prim_apps);
+	
+	arg2 = arg2->drop_i1(); // do it in place to free up space
 	Expr* lhs = arg1;
-	Expr* rhs = arg2->drop_i1();
+	Expr* rhs = arg2;
 
 	// arg1 and arg2 are now uninitialized space
 
@@ -274,6 +305,7 @@ void Expr::partial_eval_primitive_application() {
 		arg2 = partial_apply(lhs->arg2->dup(), rhs);
 		break;
 	case Inc:
+		// Inc is the one place we need to force evaluation of an rhs
 		rhs = rhs->partial_eval();
 		type = Num;
 		numeric_arg1 = rhs->to_number() + 1;
@@ -295,28 +327,6 @@ void Expr::partial_eval_primitive_application() {
 
 /*
 Expr* Expr::partial_eval() {
-	Expr* prev = 0;
-	Expr* cur = this;
-	for (;;) {
-		cur = cur->drop_i1();
-		// creates a linked list backwards by reusing the arg1 field!
-		while (cur->type == A) {
-			Expr* next = cur->arg1->drop_i1();
-			cur->arg1 = prev;
-			prev = cur; cur = next;
-		}
-		if (!prev) { // it isn't application
-			return cur;
-		}
-		Expr* next = cur; cur = prev;
-		prev = cur->arg1;
-		cur->arg1 = next;
-		cur->partial_eval_primitive_application();
-	}
-}
-*/
-
-Expr* Expr::partial_eval() {
 	Expr *cur = this;
 	for (;;) {
 		cur = cur->drop_i1();
@@ -326,6 +336,46 @@ Expr* Expr::partial_eval() {
 		cur->arg1 = cur->arg1->partial_eval();
 		cur->partial_eval_primitive_application();
 	}
+}
+*/
+
+// evaluates until the toplevel thing is not a function application.
+// a stack of nodes that are waiting for their first argument to be evaluated is built,
+// chained through the first argument field
+Expr* Expr::partial_eval() {
+	INC_COUNTER(part_apps);
+
+	Expr **cur_root = &roots[root_stack_top];
+	Expr **prev_root = &roots[root_stack_top+1];
+	root_stack_top += 2;
+	
+	Expr* prev = 0;
+	Expr *cur = this;
+	for (;;) {
+		cur = cur->drop_i1();
+		// Chase down the left hand side (while building a list of
+		// where we came from linked through arg1) until we find
+		// something that isn't an application. Once we have that,
+		// we can apply the primitive, and then repeat.
+		while (cur->type == A) {
+			Expr* next = cur->arg1->drop_i1();
+			cur->arg1 = prev;
+			prev = cur; cur = next;
+		}
+		if (!prev) { // we've gotten it down to something that isn't an application
+			break;
+		}
+		Expr* next = cur; cur = prev;
+		prev = cur->arg1;
+		cur->arg1 = next;
+
+		*cur_root = cur;
+		*prev_root = prev;
+		cur->partial_eval_primitive_application();
+	}
+
+	root_stack_top -= 2;
+	return cur;
 }
 
 /*
@@ -352,6 +402,7 @@ void Expr::free() {
 			} else {
 				cur->arg1 = free_list;
 				free_list = cur;
+				INC_COUNTER(frees);
 			}
 			cur = next;
 		}
@@ -363,6 +414,7 @@ void Expr::free() {
 		cur->arg1 = free_list;
 		free_list = cur;
 		cur = cur->arg2;
+		INC_COUNTER(frees);
 	}
 }
 
@@ -527,12 +579,13 @@ static Expr* cdr(Expr* list) {
 
 static int church2int(Expr* church) {
 	Expr* e = Expr::partial_apply(Expr::partial_apply(church, Inc.dup()), Zero.dup());
-	g_expr = e;
+	*church2int_root = e;
 	int result = e->partial_eval()->to_number();
 	if (result == -1) {
 		fputs("Runtime error: invalid output format (result was not a number)\n", stderr);
 		exit(3);
 	}
+	*church2int_root = 0;
 	return result;
 }
 
@@ -607,9 +660,16 @@ int main(int argc, char** argv) {
 	}
 	e = Expr::partial_apply(e, new Expr(Expr::LazyRead));
 	for (;;) {
+		*toplevel_root = e;
 		int ch = church2int(car(e->dup()));
-		if (ch >= 256)
+		if (ch >= 256) {
+#if DEBUG_COUNTERS
+			fprintf(stderr, "  allocs: %d\n   frees: %d\n    news: %d\n", allocs, frees, news);
+			fprintf(stderr, "primapps: %d\npartapps: %d\n", prim_apps, part_apps);
+			fprintf(stderr, " refincs: %d\n refdecs: %d\n", ref_incs, ref_decs);
+#endif
 			return ch-256;
+		}
 		putchar(ch);
 		e = cdr(e);
 	}
