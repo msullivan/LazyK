@@ -93,21 +93,35 @@ exprToComb K = k
 exprToComb I = i
 exprToComb (App e1 e2) = exprToComb e1 $$ exprToComb e2
 
-parseExp :: String -> (Expr, String)
-parseExp ('I':rest) = (I, rest)
-parseExp ('i':rest) = (I, rest)
-parseExp ('K':rest) = (K, rest)
-parseExp ('k':rest) = (K, rest)
-parseExp ('S':rest) = (S, rest)
-parseExp ('s':rest) = (S, rest)
-parseExp ('`':rest) =
-  let (e1, rest') = parseExp rest
-      (e2, rest'') = parseExp rest'
+iota :: Expr
+iota = S `App` (S `App` I `App` (K `App` S)) `App` (K `App` K)
+
+parseJotExp :: Expr -> String -> (Expr, String)
+parseJotExp e ('0':rest) = parseJotExp (e `App` S `App` K) rest
+parseJotExp e ('1':rest) = parseJotExp (S `App` (K `App` e)) rest
+parseJotExp e rest = (e, rest)
+
+parseExp :: Bool -> String -> (Expr, String)
+parseExp _ ('I':rest) = (I, rest)
+parseExp True ('i':rest) = (iota, rest)
+parseExp False ('i':rest) = (I, rest)
+parseExp _ ('K':rest) = (K, rest)
+parseExp _ ('k':rest) = (K, rest)
+parseExp _ ('S':rest) = (S, rest)
+parseExp _ ('s':rest) = (S, rest)
+parseExp _ ('`':rest) = parseApp False rest
+parseExp _ ('*':rest) = parseApp True rest
+parseExp _ ('(':rest) = parseCCExp True rest
+parseExp _ rest@('0':_) = parseJotExp I rest
+parseExp _ rest@('1':_) = parseJotExp I rest
+parseExp _ (')':_) = error "paren fuckup"
+parseExp _ s = error $ "other fuckup: '" ++ s ++ "'"
+
+parseApp :: Bool -> String -> (Expr, String)
+parseApp is_iota rest =
+  let (e1, rest') = parseExp is_iota rest
+      (e2, rest'') = parseExp is_iota rest'
   in (App e1 e2, rest'')
-parseExp ('(':rest) = parse' True rest
-parseExp (')':_) = error "paren fuckup"
-parseExp (c:rest) | isSpace c = parseExp rest
-parseExp s = error $ "other fuckup: '" ++ s ++ "'"
 
 -- collecteAdjacent nested string
 collectAdjacent :: Bool -> String -> ([Expr], String)
@@ -116,22 +130,22 @@ collectAdjacent False (')':_) = error "unmatched closed paren"
 collectAdjacent False [] = ([], [])
 collectAdjacent True [] = error "unexpected EOF"
 collectAdjacent nested string =
-  let (exp, rest) = parseExp string
+  let (exp, rest) = parseExp False string
       (exps, rest') = collectAdjacent nested rest
   in (exp:exps, rest')
 
-parse' :: Bool -> String -> (Expr, String)
-parse' False [] = (I, []) -- stupid special case
-parse' nested string =
-  let (exps, rest) = collectAdjacent nested string
-  in (foldl1 App exps, rest)
+parseCCExp :: Bool -> String -> (Expr, String)
+parseCCExp nested string =
+  case collectAdjacent nested string of
+    ([], rest) -> (I, rest)
+    (exps, rest) -> (foldl1 App exps, rest)
 
 -- Strip out whitespace and comment lines
 stripNonsense :: String -> String
 stripNonsense = filter (not . isSpace) . unlines . filter (not . isPrefixOf "#") . lines
 
 parse :: String -> Expr
-parse = fst . parse' False . stripNonsense
+parse = fst . parseCCExp False . stripNonsense
 
 -- Utilities for running programs.
 
