@@ -23,7 +23,7 @@
 (lazy-def '(cons x y)	'(lambda (f) (f x y)))
 (lazy-def '(car list)	'(list #t))
 (lazy-def '(cdr list)	'(list #f))
-(lazy-def ()		'(lambda (f) #t))
+(lazy-def '()		'(lambda (f) #t))
 (lazy-def '(null? list)	'(list (lambda (x y) #f)))
 (lazy-def '(nth n lst)	'(car ((n cdr) lst)))
 (lazy-def '(list-ref lst n)	'(nth n lst))

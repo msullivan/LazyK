@@ -43,8 +43,8 @@
   (set! lazy-defs
         (cons (if (pair? name)
                   (cons (car name)
-                        (curry-lambda (cdr name) (curry body)) )
-                  (cons name (curry body)) )
+                        (curry-lambda (cdr name) (curry-exp body)) )
+                  (cons name (curry-exp body)) )
               lazy-defs )))
 
 (define (lazy-def-lookup name)
@@ -53,12 +53,12 @@
 
 ; Currying.
 
-(define (curry expr)
+(define (curry-exp expr)
   (cond ((not (pair? expr)) expr)
         ((eq? (car expr) 'lambda)
-         (curry-lambda (cadr expr) (curry (caddr expr))) )
+         (curry-lambda (cadr expr) (curry-exp (caddr expr))) )
         (else
-         (curry-app (map curry expr)) )))
+         (curry-app (map curry-exp expr)) )))
 
 (define (curry-lambda vars body)
   (if (null? vars)
@@ -169,11 +169,11 @@
           (else #t) )))
 
 (define (free-vars expr)
-  (let loop ((expr expr) (bound ()))
+  (let loop ((expr expr) (bound '()))
     (expr-dispatch expr
       (lambda (leaf)
         (if (memv leaf bound)
-            ()
+            '()
             (list leaf) ))
       (lambda (f g)
         (append (loop f bound) (loop g bound)) )
@@ -281,7 +281,7 @@
 ; Putting it all together.
 
 (define (laze code)
-  (unapply-s (apply-ski (unabstract (apply-lambdas (expand-macros (curry code)))))) )
+  (unapply-s (apply-ski (unabstract (apply-lambdas (expand-macros (curry-exp code)))))) )
 
 
 ; Printing it out.
@@ -298,9 +298,9 @@
             (display "]") )))
      (lambda (f g)
       (self f)
-      (if (pair? g) (display "("))
+      (if (pair? g) (display "(") '())
       (self g)
-      (if (pair? g) (display ")")) )
+      (if (pair? g) (display ")") '()) )
      (lambda (var body)
       (error "Can't print lambdas as CC!") )))
   (newline) )
