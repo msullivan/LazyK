@@ -37,7 +37,7 @@
    (lambda (self)
      (lambda (lst)
        (digitize-n (car lst)
-                   (cons 32 (self self (cdr lst))) )))))
+                   (cons 10 (self self (cdr lst))) )))))
 
 (lazy-def 'digitize-n
  '((lambda (x) (x x))
