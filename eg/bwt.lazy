@@ -1,0 +1,26 @@
+# Performs (one variation of) the Burrows-Wheeler blocksort transform on its
+# input. Don't try to run it on large inputs. :-) Source is in mergesort.scm.
+
+S(K(SII(S(K(S(S(SI(K(K(K(KI)))))(K(K(SII(SII(S(S(KS)K)I))))))))(S(K(S(S(K(S(
+S(KS)(S(KK)(S(KS)(S(K(SI))K))))(KK)))(S(K(SI(KK)))(SI(KK))))))(S(S(KS)(S(KK)
+(SII)))(K(SI(K(KI)))))))))(S(K(SII(S(K(S(S(S(S(SI(K(KI)))(KK))(K(K(K(KI)))))
+(SI(KK)))))(S(S(KS)(S(KK)(SII)))(K(SII(S(K(S(S(K(S(S(KS)(S(KK)(S(KS)(S(K(SI)
+)K))))(KK)))(S(S(K(SII(S(K(S(S(KS)(SI(K(K(K(KI))))))))(S(K(S(S(KS)(S(K(S(SI(
+K(K(K(KI)))))))K))))(S(S(KS)(S(K(S(KS)))(S(K(S(S(KS)(S(K(S(KI)))(S(K(S(S(K(S
+(S(KS)(S(KK)(S(K(SII(S(K(S(K(S(S(SI(K(K(K(KI)))))(K(KI)))))))(S(K(S(S(KS)(SS
+(S(SI(K(K(K(KI))))))(KK)))))(S(S(KS)(S(K(S(KS)))(S(K(S(K(S(S(SI(KK))(K(S(K(S
+I))K)))))))(S(K(S(K(S(KK)))))(S(S(KS)(S(K(S(KS)))(S(K(S(S(KS)(S(KK)(S(SI(KK)
+)(K(S(K(SI))K)))))))(S(K(S(K(S(KK)))))(S(S(KS)(S(K(S(KS)))(S(K(S(KK)))(S(S(K
+S)(S(KK)(SII)))(K(SI(K(KI))))))))(K(K(SI(K(KI))))))))))(K(K(S(S(SI(KK))(K(S(
+K(SI))K)))(K(K(KI)))))))))))(K(S(KK)(S(S(SI(KK))(K(S(K(SI))K)))(K(KK))))))))
+))(SI(K(KI))))))(K(SI(K(KI))))))(SI(KK)))))(SS(SI)(KK)))))))(S(K(S(K(S(S(S(K
+S)(S(KK)(S(KS)(S(K(SI))(SS(SI)(KK))))))(KK))))))(S(S(KS)(S(K(S(KS)))(S(K(S(K
+K)))(SII))))(K(K(SI(K(KI))))))))))(S(K(S(S(KS)(SS(S(S(KS)(S(KK)(S(KS)(S(K(SI
+))(SS(SI)(KK)))))))(KK)))))(S(S(KS)(S(KK)(SII)))(K(SI(K(KI)))))))))))(SI(KK)
+))(S(SI(K(KI)))(KK))))))(S(S(KS)(S(KK)(SII)))(K(S(SI(K(KI)))(K(KI)))))))))))
+)(S(K(SII(S(K(S(K(SII(SII(S(S(KS)K)I))(S(K(SI))K)(K(SII(S(K(S(K(S(SI(K(KK)))
+))K))(SII))))))))(S(K(S(S(S(SI(K(KI)))(KK))(K(S(K(SI))K)))))(S(K(S(KK)))(S(K
+(S(S(KS)(S(K(SI))(S(KK)(S(S(KS)(S(K(SI))K))(K(K(KK)))))))))(S(K(S(KK)))(S(S(
+KS)(S(KK)(SII)))(K(SI(K(KI))))))))))))(S(S(KS)(S(K(SI))(S(KK)(SII(S(K(S(S(K(
+SII(SII(S(S(KS)K)I))(S(K(SI))K)))(SS(SI)(KK)))))(S(K(S(S(S(SI(K(KI)))(KK))(K
+(S(K(SI))K)))))(S(K(S(KK)))(S(S(KS)(S(KK)(SII)))(K(SI(K(KI))))))))))))K)))

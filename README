@@ -1,0 +1,48 @@
+This is Lazy K, which I am submitting to the Essies for consideration in the
+category of "most entertaining new Turing-complete language."
+
+Lazy K is, roughly speaking, a referentially-transparent Unlambda. For all
+the gory details (excuse me, all the clean and elegant details) please refer
+to lazy-k.html, which is a draft of a web page introducing the language. (It
+doesn't exist on the web yet.) Many of the source code files also contain
+semi-edifying comments.
+
+One of the sample programs is a rather pretty implementation of mergesort,
+which I would like to submit for consideration under the "iron programmer"
+category, though whether it constitutes enough material to qualify is
+questionable.
+
+I would also like to submit my Unlambda, Brainfuck and Befunge interpreters
+for consideration under the category of "best language implementation in an
+esoteric language," but unfortunately I can't because that category doesn't
+exist this time around. Oh well.
+
+Portability and build details:
+
+This archive contains files written in four languages: C, C++, Scheme, and
+Lazy K. The C, C++, and Scheme programs are standards-compliant to the best
+of my knowledge and should be quite portable. There are a couple of
+portability issues affecting Lazy K programs. One is that gcc likes to
+buffer output lines even when they're going to a console, which causes the
+prime-number printer to appear to hang for a while under a gcc-compiled
+interpreter. The other issue is the old newline versus CR-LF problem. The
+Lazy K interpreter has a -b flag which is intended for working around
+newline problems. In general, use it if omitting it causes problems and omit
+it if using it causes problems.
+
+No makefiles are provided for the C or C++ files; however, as there is only
+one of each, and they compile to separate executables, building them by hand
+with any compiler is straightforward.
+
+A pre-built Win32 executable of the Lazy K interpreter is included in the
+archive. It requires MSVCRT.DLL.
+
+To run the sample programs (*.lazy) just specify them on the command line,
+like this:
+
+    lazy eg/primes.lazy
+
+The distribution has undergone umpteen revisions in the last few days and
+it's entirely possible I screwed something up (e.g. missing files, HTML
+formatting problems). If you have any problems please inform me and I will
+address them posthaste.
