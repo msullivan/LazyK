@@ -110,6 +110,7 @@ collectAdjacent nested string =
   in (exp:exps, rest')
 
 parse' :: Bool -> String -> (Expr, String)
+parse' False [] = (I, []) -- stupid special case
 parse' nested string =
   let (exps, rest) = collectAdjacent nested string
   in (foldl1 App exps, rest)
