@@ -293,18 +293,19 @@ void Expr::partial_eval_primitive_application() {
 	lhs->deref();
 }
 
-
+/*
 Expr* Expr::partial_eval() {
 	Expr* prev = 0;
 	Expr* cur = this;
 	for (;;) {
 		cur = cur->drop_i1();
+		// creates a linked list backwards by reusing the arg1 field!
 		while (cur->type == A) {
 			Expr* next = cur->arg1->drop_i1();
 			cur->arg1 = prev;
 			prev = cur; cur = next;
 		}
-		if (!prev) {
+		if (!prev) { // it isn't application
 			return cur;
 		}
 		Expr* next = cur; cur = prev;
@@ -313,7 +314,19 @@ Expr* Expr::partial_eval() {
 		cur->partial_eval_primitive_application();
 	}
 }
+*/
 
+Expr* Expr::partial_eval() {
+	Expr *cur = this;
+	for (;;) {
+		cur = cur->drop_i1();
+		if (cur->type != A) {
+			return cur;
+		}
+		cur->arg1 = cur->arg1->partial_eval();
+		cur->partial_eval_primitive_application();
+	}
+}
 
 /*
 void Expr::free() {
