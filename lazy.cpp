@@ -32,6 +32,7 @@
 
 #define DEBUG_COUNTERS 1
 
+#include <assert.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -40,21 +41,30 @@
 
 #if DEBUG_COUNTERS
 static int news = 0;
-static int allocs = 0;
-static int frees = 0;
+static int gcs = 0;
 static int prim_apps = 0;
 static int part_apps = 0;
-static int ref_incs = 0;
-static int ref_decs = 0;
 
 #define INC_COUNTER(n) ((n)++)
 #else
 #define INC_COUNTER(n)
 #endif
 
+class Expr;
+
+// Garbage collection
+#define MB (1024*1024)
+#define HEAP_SIZE (64*MB)
+static char space1[HEAP_SIZE];
+static char space2[HEAP_SIZE];
+static Expr *from_space_start = (Expr *)space1;
+static Expr *from_space_end = (Expr *)(space1 + HEAP_SIZE);
+static Expr *next_alloc = from_space_start;
+static Expr *to_space_start = (Expr *)space2;
 
 class Expr {
 private:
+	Expr *forward;
 	int refcnt;
 	union {
 		Expr* arg1;
@@ -62,38 +72,22 @@ private:
 	};
 	Expr* arg2;
 
-	static Expr* free_list;
-	static Expr* alloc();
-	void free();
-
+	static inline Expr *copy_object(Expr *obj);
+	static void gc();
+	static void oom(int n);
 	void partial_eval_primitive_application();
 
 public:
+	static inline void check(int n);
+
 	enum Type { A, K, K1, S, S1, S2, I1, LazyRead, Inc, Num, Free } type;
 
 	static void* operator new(unsigned) {
 		INC_COUNTER(news);
-		Expr* result = free_list;
-		if (result) {
-			free_list = result->arg1;
-			return result;
-		} else {
-			return alloc();
+		if (next_alloc >= from_space_end) {
+			oom(1);
 		}
-	}
-
-	// caller keeps original ref plus returned ref
-	Expr* dup() {
-		INC_COUNTER(ref_incs);
-		++refcnt;
-		return this;
-	}
-	// caller loses original ref
-	void deref() {
-		INC_COUNTER(ref_decs);
-		if (--refcnt == 0) {
-			free();
-		}
+		return next_alloc++;
 	}
 
 	// caller keeps original ref
@@ -101,6 +95,7 @@ public:
 
 	// caller loses refs to a1 and a2, gets ref to new object
 	Expr(Type t, Expr* a1 =0, Expr* a2 =0) {
+		forward = 0;
 		refcnt = 1;
 		type = t;
 		arg1 = a1; arg2 = a2;
@@ -110,7 +105,7 @@ public:
 	Expr* partial_eval();
 
 	// caller loses original ref, gets returned ref
-	static Expr* partial_apply(Expr* lhs, Expr* rhs) {
+	static Expr* partial_apply(Expr* lhs, Expr* rhs) { // 1 alloc
 		// You could do something more complicated here,
 		// but I tried it and it didn't seem to improve
 		// execution speed.
@@ -120,7 +115,6 @@ public:
 	// caller loses original ref
 	int to_number() {
 		int result = (type == Num) ? numeric_arg1 : -1;
-		deref();
 		return result;
 	}
 #if 0
@@ -133,15 +127,10 @@ public:
 			do {
 				cur = cur->arg1;
 			} while (cur->type == I1);
-			cur = cur->dup();
-			this->deref();
 		}
 		return cur;
 	}
 };
-
-
-Expr* Expr::free_list = 0;
 
 
 Expr K(Expr::K);
@@ -170,23 +159,69 @@ static Expr *roots[MAX_ROOTS];
 static Expr **toplevel_root = &roots[0];
 static Expr **church2int_root = &roots[1];
 static int root_stack_top = 2;
-static Expr* cached_church_chars[257] = { KI.dup(), I.dup() };
+static Expr* cached_church_chars[257] = { &KI, &I };
 
 
-Expr* Expr::alloc() {
-	enum { blocksize = 10000 };
-	static Expr* p = 0;
-	static Expr* end = 0;
-	INC_COUNTER(allocs);
-	if (p >= end) {
-		p = (Expr*)malloc(blocksize*sizeof(Expr));
-		if (p == 0) {
-			fputs("Out of memory!\n", stderr);
-			exit(2);
-		}
-		end = p + blocksize;
+static inline bool in_arena(Expr *p) {
+	return p >= from_space_start && p < from_space_end;
+}
+
+inline Expr *Expr::copy_object(Expr *obj) {
+	if (!in_arena(obj)) return obj;
+	if (obj->forward) {
+		//fprintf(stderr, "%p -> %p\n", obj, obj->forward);
+		return obj->forward;
 	}
-	return p++;
+
+	*next_alloc = *obj;
+	obj->type = (Type)1337;
+
+	obj->forward = next_alloc;
+	//fprintf(stderr, "forwarding %p to %p\n", obj, obj->forward);
+	return next_alloc++;
+}
+
+void Expr::gc() {
+	INC_COUNTER(gcs);
+	// Set up next_alloc to point into the to-space
+	next_alloc = to_space_start;
+
+	// Process the roots
+	for (int i = 0; i < root_stack_top; i++) {
+		roots[i] = copy_object(roots[i]);
+	}
+	for (int i = 0; i < sizeof(cached_church_chars)/sizeof(cached_church_chars[0]); i++) {
+		cached_church_chars[i] = copy_object(cached_church_chars[i]);
+	}
+
+	Expr *cursor = to_space_start;
+	while (cursor < next_alloc) {
+		if (cursor->type != Num) {
+			cursor->arg1 = copy_object(cursor->arg1);
+			cursor->arg2 = copy_object(cursor->arg2);
+		}
+		cursor++;
+	}
+
+	// Do the swap
+	Expr *tmp = from_space_start;
+	from_space_start = to_space_start;
+	to_space_start = tmp;
+	from_space_end = (Expr *)((char *)from_space_start + HEAP_SIZE);
+}
+
+void Expr::oom(int n) {
+	gc();
+	if (next_alloc + n >= from_space_end) {
+		fprintf(stderr, "out of memory!\n");
+		exit(4);
+	}
+}
+
+inline void Expr::check(int n) {
+	if (next_alloc + n >= from_space_end) {
+		oom(n);
+	}
 }
 
 #if 0
@@ -253,9 +288,9 @@ Expr* make_church_char(int ch) {
 	}
 
 	if (cached_church_chars[ch] == 0) {
-		cached_church_chars[ch] = new Expr(Expr::S2, SKSK.dup(), make_church_char(ch-1));
+		cached_church_chars[ch] = new Expr(Expr::S2, &SKSK, make_church_char(ch-1));
 	}
-	return cached_church_chars[ch]->dup();
+	return cached_church_chars[ch];
 }
 
 
@@ -267,48 +302,51 @@ void Expr::partial_eval_primitive_application() {
 	INC_COUNTER(prim_apps);
 	
 	arg2 = arg2->drop_i1(); // do it in place to free up space
-	Expr* lhs = arg1;
-	Expr* rhs = arg2;
 
 	// arg1 and arg2 are now uninitialized space
 
-	switch (lhs->type) {
-	case K:
+	switch (arg1->type) {
+	case K: // 0 allocs
 		type = K1;
-		arg1 = rhs;
+		arg1 = arg2;
 		arg2 = 0;
 		break;
-	case K1:
+	case K1: // 0 allocs
 		type = I1;
-		arg1 = lhs->arg1->dup();
+		arg1 = arg1->arg1;
 		arg2 = 0;
-		rhs->deref();
 		break;
-	case S:
+	case S: // 0 allocs
 		type = S1;
-		arg1 = rhs;
+		arg1 = arg2;
 		arg2 = 0;
 		break;
-	case S1:
+	case S1: // 0 allocs
 		type = S2;
-		arg1 = lhs->arg1->dup();
-		arg2 = rhs;
+		arg1 = arg1->arg1;
+		arg2 = arg2;
 		break;
-	case LazyRead:
-		lhs->type = S2;
-		lhs->arg1 = new Expr(S2, I.dup(), new Expr(K1, make_church_char(getchar())));
-		lhs->arg2 = new Expr(K1, new Expr(LazyRead));
+	case LazyRead: // 6 allocs (4+2 from S2)
+		check(6);
+		arg1->type = S2;
+		arg1->arg1 = new Expr(S2, &I, new Expr(K1, make_church_char(getchar())));
+		arg1->arg2 = new Expr(K1, new Expr(LazyRead));
 		// fall thru
-	case S2:
+	case S2: // 2 allocs
+	{
+		check(2);
 		//type = A;
-		arg1 = partial_apply(lhs->arg1->dup(), rhs->dup());
-		arg2 = partial_apply(lhs->arg2->dup(), rhs);
+		Expr* lhs = arg1;
+		Expr* rhs = arg2;
+		arg1 = partial_apply(lhs->arg1, rhs);
+		arg2 = partial_apply(lhs->arg2, rhs);
 		break;
-	case Inc:
+	}
+	case Inc: // 0 allocs - but recursion
 		// Inc is the one place we need to force evaluation of an rhs
-		rhs = rhs->partial_eval();
+		arg2 = arg2->partial_eval();
 		type = Num;
-		numeric_arg1 = rhs->to_number() + 1;
+		numeric_arg1 = arg2->to_number() + 1;
 		if (numeric_arg1 == 0) {
 			fputs("Runtime error: invalid output format (attempted to apply inc to a non-number)\n", stderr);
 			exit(3);
@@ -319,10 +357,12 @@ void Expr::partial_eval_primitive_application() {
 		fputs("Runtime error: invalid output format (attempted to apply a number)\n", stderr);
 		exit(3);
 	default:
-		fprintf(stderr, "INTERNAL ERROR: invalid type in partial_eval_primitive_application (%d)\n", lhs->type);
+		fprintf(stderr,
+		        "INTERNAL ERROR: invalid type in partial_eval_primitive_application (%d)\n",
+		        arg1->type);
+		abort();
 		exit(4);
 	}
-	lhs->deref();
 }
 
 /*
@@ -372,52 +412,13 @@ Expr* Expr::partial_eval() {
 		*cur_root = cur;
 		*prev_root = prev;
 		cur->partial_eval_primitive_application();
+		cur = *cur_root;
+		prev = *prev_root;
 	}
 
 	root_stack_top -= 2;
 	return cur;
 }
-
-/*
-void Expr::free() {
-	if (type != Num) {
-		if (arg1) arg1->deref();
-		if (arg2) arg2->deref();
-	}
-	type = Free;
-	arg1 = free_list;
-	free_list = this;
-}
-*/
-
-void Expr::free() {
-	Expr* cur = this;
-	Expr* partially_free_list = 0;
-	for (;;) {
-		while (--cur->refcnt <= 0 && cur->arg1 != 0 && cur->type != Num) {
-			Expr* next = cur->arg1;
-			if (cur->arg2 != 0) {
-				cur->arg1 = partially_free_list;
-				partially_free_list = cur;
-			} else {
-				cur->arg1 = free_list;
-				free_list = cur;
-				INC_COUNTER(frees);
-			}
-			cur = next;
-		}
-		if (partially_free_list == 0) {
-			break;
-		}
-		cur = partially_free_list;
-		partially_free_list = partially_free_list->arg1;
-		cur->arg1 = free_list;
-		free_list = cur;
-		cur = cur->arg2;
-		INC_COUNTER(frees);
-	}
-}
-
 
 class Stream {
 public:
@@ -522,23 +523,23 @@ Expr* parse_expr(Stream* f, int ch, bool i_is_iota) {
 	case ')':
 		f->error("Mismatched close-parenthesis!");
 	case 'k': case 'K':
-		return K.dup();
+		return &K;
 	case 's': case 'S':
-		return S.dup();
+		return &S;
 	case 'i':
 		if (i_is_iota)
-			return Iota.dup();
+			return &Iota;
 		// else fall thru
 	case 'I':
-		return I.dup();
+		return &I;
 	case '0': case '1':
 	{
-		Expr* e = I.dup();
+		Expr* e = &I;
 		do {
 			if (ch == '0') {
-				e = Expr::partial_apply(Expr::partial_apply(e, S.dup()), K.dup());
+				e = Expr::partial_apply(Expr::partial_apply(e, &S), &K);
 			} else {
-				e = Expr::partial_apply(S.dup(), Expr::partial_apply(K.dup(), e));
+				e = Expr::partial_apply(&S, Expr::partial_apply(&K, e));
 			}
 			ch = f->getch();
 		} while (ch == '0' || ch == '1');
@@ -563,22 +564,23 @@ Expr* parse_manual_close(Stream* f, int expected_terminator) {
 		f->error(peek == EOF ? "Premature end of program!" : "Unmatched trailing close-parenthesis!");
 	}
 	if (e == 0) {
-		e = I.dup();
+		e = &I;
 	}
 	return e;
 }
 
 
 static Expr* car(Expr* list) {
-	return Expr::partial_apply(list, K.dup());
+	return Expr::partial_apply(list, &K);
 }
 
 static Expr* cdr(Expr* list) {
-	return Expr::partial_apply(list, KI.dup());
+	return Expr::partial_apply(list, &KI);
 }
 
 static int church2int(Expr* church) {
-	Expr* e = Expr::partial_apply(Expr::partial_apply(church, Inc.dup()), Zero.dup());
+	Expr::check(2);
+	Expr* e = Expr::partial_apply(Expr::partial_apply(church, &Inc), &Zero);
 	*church2int_root = e;
 	int result = e->partial_eval()->to_number();
 	if (result == -1) {
@@ -621,7 +623,12 @@ void usage() {
 
 
 int main(int argc, char** argv) {
-	Expr* e = I.dup();
+	// Preintialize the chuch numeral table
+	for (int i = 0; i < sizeof(cached_church_chars)/sizeof(cached_church_chars[0]); i++) {
+		make_church_char(i);
+	}
+	
+	Expr* e = &I;
 	for (int i=1; i<argc; ++i) {
 		if (argv[i][0] == '-') {
 			switch (argv[i][1]) {
@@ -658,19 +665,17 @@ int main(int argc, char** argv) {
 			e = append_program(e, &s);
 		}
 	}
-	e = Expr::partial_apply(e, new Expr(Expr::LazyRead));
+	*toplevel_root = Expr::partial_apply(e, new Expr(Expr::LazyRead));
 	for (;;) {
-		*toplevel_root = e;
-		int ch = church2int(car(e->dup()));
+		int ch = church2int(car(*toplevel_root));
 		if (ch >= 256) {
 #if DEBUG_COUNTERS
-			fprintf(stderr, "  allocs: %d\n   frees: %d\n    news: %d\n", allocs, frees, news);
+			fprintf(stderr, "     gcs: %d\n    news: %d\n", gcs, news);
 			fprintf(stderr, "primapps: %d\npartapps: %d\n", prim_apps, part_apps);
-			fprintf(stderr, " refincs: %d\n refdecs: %d\n", ref_incs, ref_decs);
 #endif
 			return ch-256;
 		}
 		putchar(ch);
-		e = cdr(e);
+		*toplevel_root = cdr(*toplevel_root);
 	}
 }
