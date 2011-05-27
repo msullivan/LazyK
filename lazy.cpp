@@ -65,7 +65,6 @@ static Expr *to_space_start = (Expr *)space2;
 class Expr {
 private:
 	Expr *forward;
-	int refcnt;
 	union {
 		Expr* arg1;
 		int numeric_arg1;
@@ -96,7 +95,6 @@ public:
 	// caller loses refs to a1 and a2, gets ref to new object
 	Expr(Type t, Expr* a1 =0, Expr* a2 =0) {
 		forward = 0;
-		refcnt = 1;
 		type = t;
 		arg1 = a1; arg2 = a2;
 	}
