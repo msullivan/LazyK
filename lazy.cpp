@@ -279,11 +279,13 @@ static inline Expr *unroot() {
 	return roots[--root_stack_top];
 }
 
-static inline void check_rooted(int n, Expr *&e) {
+static inline void check_rooted(int n, Expr *&e1, Expr *&e2) {
 	if (is_exhausted(n)) {
-		root(e);
+		root(e1);
+		root(e2);
 		oom(n);
-		e = unroot();
+		e2 = unroot();
+		e1 = unroot();
 	}
 }
 
@@ -321,7 +323,9 @@ static Expr *partial_eval(Expr *node);
 
 // This function modifies the object in-place so that
 // all references to it see the new version.
-static inline Expr *partial_eval_primitive_application(Expr *e) {
+// An additional root gets past in by reference so that we can root it
+// if we need to. I don't really like it but it is fast.
+static inline Expr *partial_eval_primitive_application(Expr *e, Expr *&prev) {
 	INC_COUNTER(prim_apps);
 
 	e->arg2 = drop_i1(e->arg2); // do it in place to free up space
@@ -350,7 +354,7 @@ static inline Expr *partial_eval_primitive_application(Expr *e) {
 		break;
 	case LazyRead: // 6 allocs (4+2 from S2)
 	{
-		check_rooted(6, e);
+		check_rooted(6, e, prev);
 		Expr *lhs = e->arg1;
 		lhs->type = S2;
 		lhs->arg1 = new Expr(S2, &cI, new Expr(K1, make_church_char(getchar())));
@@ -359,7 +363,7 @@ static inline Expr *partial_eval_primitive_application(Expr *e) {
 	}
 	case S2: // 2 allocs
 	{
-		check_rooted(2, e);
+		check_rooted(2, e, prev);
 		//type = A;
 		Expr *lhs = e->arg1, *rhs = e->arg2;
 		e->arg1 = partial_apply(lhs->arg1, rhs);
@@ -370,7 +374,9 @@ static inline Expr *partial_eval_primitive_application(Expr *e) {
 	{
 		// Inc is the one place we need to force evaluation of an rhs
 		root(e);
+		root(prev);
 		Expr *rhs_res = partial_eval(rhs);
+		prev = unroot();
 		e = unroot();
 
 		e->type = Num;
@@ -416,9 +422,6 @@ Expr* Expr::partial_eval() {
 static Expr *partial_eval(Expr *node) {
 	INC_COUNTER(part_apps);
 
-	Expr **prev_root = &roots[root_stack_top];
-	root(0);
-	
 	Expr *prev = 0;
 	Expr *cur = node;
 	for (;;) {
@@ -439,12 +442,8 @@ static Expr *partial_eval(Expr *node) {
 		prev = cur->arg1;
 		cur->arg1 = next;
 
-		*prev_root = prev;
-		cur = partial_eval_primitive_application(cur);
-		prev = *prev_root;
+		cur = partial_eval_primitive_application(cur, prev);
 	}
-
-	unroot();
 
 	return cur;
 }
