@@ -78,7 +78,7 @@ struct Expr {
 	Expr* arg2;
 	Type type;
 
-	static void* operator new(unsigned) {
+	static void* operator new(size_t) {
 		INC_COUNTER(news);
 		// We don't do an oom check. The caller better have already
 		// done it with check or check_rooted.
