@@ -156,7 +156,7 @@ static inline Expr *copy_object(Expr *obj) {
 
 	*next_alloc = *obj;
 	obj->type = (Type)1337;
-//	obj->arg1 = obj->arg2 = (Expr*)(-1);
+	obj->arg1 = obj->arg2 = (Expr*)(-1);
 
 	obj->forward = next_alloc;
 	//fprintf(stderr, "forwarding %p to %p\n", obj, obj->forward);
@@ -302,8 +302,10 @@ static Expr *partial_eval(Expr *node);
 
 // This function modifies the object in-place so that
 // all references to it see the new version.
-void partial_eval_primitive_application(Expr *e) {
+void partial_eval_primitive_application() {
 	INC_COUNTER(prim_apps);
+
+	Expr *e = roots[root_stack_top-2];
 	
 	e->arg2 = e->arg2->drop_i1(); // do it in place to free up space
 //	Expr *arg1 = e->arg1;
@@ -334,14 +336,14 @@ void partial_eval_primitive_application(Expr *e) {
 		e->arg2 = e->arg2;
 		break;
 	case LazyRead: // 6 allocs (4+2 from S2)
-		check(6);
+		check(6); e = roots[root_stack_top-2];
 		e->arg1->type = S2;
 		e->arg1->arg1 = new Expr(S2, &cI, new Expr(K1, make_church_char(getchar())));
 		e->arg1->arg2 = new Expr(K1, new Expr(LazyRead));
 		// fall thru
 	case S2: // 2 allocs
 	{
-		check(2);
+		check(2); e = roots[root_stack_top-2];
 		//type = A;
 		Expr* lhs = e->arg1;
 		Expr* rhs = e->arg2;
@@ -350,8 +352,12 @@ void partial_eval_primitive_application(Expr *e) {
 		break;
 	}
 	case Inc: // 0 allocs - but recursion
+	{
 		// Inc is the one place we need to force evaluation of an rhs
-		e->arg2 = partial_eval(e->arg2);
+		Expr *arg2_new = partial_eval(e->arg2);
+		e = roots[root_stack_top-2];
+		e->arg2 = arg2_new;
+
 		e->type = Num;
 		e->numeric_arg1 = e->arg2->to_number() + 1;
 		if (e->numeric_arg1 == 0) {
@@ -360,6 +366,7 @@ void partial_eval_primitive_application(Expr *e) {
 		}
 		e->arg2 = 0;
 		break;
+	}
 	case Num:
 		fputs("Runtime error: invalid output format (attempted to apply a number)\n", stderr);
 		exit(3);
@@ -418,7 +425,7 @@ static Expr *partial_eval(Expr *node) {
 
 		*cur_root = cur;
 		*prev_root = prev;
-		partial_eval_primitive_application(cur);
+		partial_eval_primitive_application();
 		cur = *cur_root;
 		prev = *prev_root;
 	}
