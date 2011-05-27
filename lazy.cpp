@@ -324,7 +324,7 @@ static Expr *partial_eval(Expr *node);
 
 // This function modifies the object in-place so that
 // all references to it see the new version.
-Expr *partial_eval_primitive_application(Expr *e) {
+static inline Expr *partial_eval_primitive_application(Expr *e) {
 	INC_COUNTER(prim_apps);
 
 	e->arg2 = e->arg2->drop_i1(); // do it in place to free up space
