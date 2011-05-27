@@ -30,7 +30,7 @@
 //    stream.
 //
 
-#define DEBUG_COUNTERS 1
+#define DEBUG_COUNTERS 0
 
 #include <assert.h>
 #include <stdio.h>
