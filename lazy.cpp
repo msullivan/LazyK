@@ -312,40 +312,43 @@ Expr *partial_eval_primitive_application(Expr *e) {
 	INC_COUNTER(prim_apps);
 
 	e->arg2 = e->arg2->drop_i1(); // do it in place to free up space
+	Expr *lhs = e->arg1, *rhs = e->arg2;
 
-	switch (e->arg1->type) {
+	switch (lhs->type) {
 	case K: // 0 allocs
 		e->type = K1;
-		e->arg1 = e->arg2;
+		e->arg1 = rhs;
 		e->arg2 = 0;
 		break;
 	case K1: // 0 allocs
 		e->type = I1;
-		e->arg1 = e->arg1->arg1;
+		e->arg1 = lhs->arg1;
 		e->arg2 = 0;
 		break;
 	case S: // 0 allocs
 		e->type = S1;
-		e->arg1 = e->arg2;
+		e->arg1 = rhs;
 		e->arg2 = 0;
 		break;
 	case S1: // 0 allocs
 		e->type = S2;
-		e->arg1 = e->arg1->arg1;
-		e->arg2 = e->arg2;
+		e->arg1 = lhs->arg1;
+		e->arg2 = rhs;
 		break;
 	case LazyRead: // 6 allocs (4+2 from S2)
+	{
 		check_rooted(6, e);
-		e->arg1->type = S2;
-		e->arg1->arg1 = new Expr(S2, &cI, new Expr(K1, make_church_char(getchar())));
-		e->arg1->arg2 = new Expr(K1, new Expr(LazyRead));
+		Expr *lhs = e->arg1;
+		lhs->type = S2;
+		lhs->arg1 = new Expr(S2, &cI, new Expr(K1, make_church_char(getchar())));
+		lhs->arg2 = new Expr(K1, new Expr(LazyRead));
 		// fall thru
+	}
 	case S2: // 2 allocs
 	{
 		check_rooted(2, e);
 		//type = A;
-		Expr* lhs = e->arg1;
-		Expr* rhs = e->arg2;
+		Expr *lhs = e->arg1, *rhs = e->arg2;
 		e->arg1 = partial_apply(lhs->arg1, rhs);
 		e->arg2 = partial_apply(lhs->arg2, rhs);
 		break;
@@ -354,12 +357,11 @@ Expr *partial_eval_primitive_application(Expr *e) {
 	{
 		// Inc is the one place we need to force evaluation of an rhs
 		root(e);
-		Expr *arg2_new = partial_eval(e->arg2);
+		Expr *rhs_res = partial_eval(rhs);
 		e = unroot();
-		e->arg2 = arg2_new;
 
 		e->type = Num;
-		e->numeric_arg1 = e->arg2->to_number() + 1;
+		e->numeric_arg1 = rhs_res->to_number() + 1;
 		if (e->numeric_arg1 == 0) {
 			fputs("Runtime error: invalid output format (attempted to apply inc to a non-number)\n", stderr);
 			exit(3);
