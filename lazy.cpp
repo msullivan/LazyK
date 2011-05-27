@@ -88,17 +88,12 @@ struct Expr {
 		return next_alloc++;
 	}
 
-	// caller keeps original ref
-	Type gettype() { return type; }
-
-	// caller loses refs to a1 and a2, gets ref to new object
-	Expr(Type t, Expr* a1 =0, Expr* a2 =0) {
+	Expr(Type t, Expr* a1 = 0, Expr* a2 = 0) {
 		forward = 0;
 		type = t;
 		arg1 = a1; arg2 = a2;
 	}
 
-	// caller loses original ref
 	int to_number() {
 		int result = (type == Num) ? numeric_arg1 : -1;
 		return result;
@@ -107,6 +102,64 @@ struct Expr {
 	void print(Expr*);
 #endif
 };
+
+#if 0
+void Expr::print(Expr* highlight) {
+	if (this == highlight) {
+		fputs("###", stdout);
+	}
+	switch (type) {
+		case A:
+			putchar('(');
+			arg1->print(highlight);
+			putchar(' ');
+			arg2->print(highlight);
+			putchar(')');
+			break;
+		case K:
+			putchar('K');
+			break;
+		case K1:
+			fputs("[K ", stdout);
+			arg1->print(highlight);
+			putchar(']');
+			break;
+		case S:
+			putchar('S');
+			break;
+		case S1:
+			fputs("[s ", stdout);
+			arg1->print(highlight);
+			putchar(']');
+			break;
+		case S2:
+			fputs("[S ", stdout);
+			arg1->print(highlight);
+			putchar(' ');
+			arg2->print(highlight);
+			putchar(']');
+			break;
+		case I1:
+			putchar('.');
+			arg1->print(highlight);
+			break;
+		case LazyRead:
+			fputs("LazyRead", stdout);
+			break;
+		case Inc:
+			fputs("Inc", stdout);
+			break;
+		case Num:
+			printf("%d", numeric_arg1);
+			break;
+		default:
+			putchar('?');
+	}
+	if (this == highlight) {
+		fputs("###", stdout);
+	}
+}
+#endif
 
 
 Expr cK(K);
@@ -241,64 +294,6 @@ static inline Expr* partial_apply(Expr* lhs, Expr* rhs) { // 1 alloc
 	return new Expr(A, lhs, rhs);
 }
 
-
-#if 0
-void Expr::print(Expr* highlight) {
-	if (this == highlight) {
-		fputs("###", stdout);
-	}
-	switch (type) {
-		case A:
-			putchar('(');
-			arg1->print(highlight);
-			putchar(' ');
-			arg2->print(highlight);
-			putchar(')');
-			break;
-		case K:
-			putchar('K');
-			break;
-		case K1:
-			fputs("[K ", stdout);
-			arg1->print(highlight);
-			putchar(']');
-			break;
-		case S:
-			putchar('S');
-			break;
-		case S1:
-			fputs("[s ", stdout);
-			arg1->print(highlight);
-			putchar(']');
-			break;
-		case S2:
-			fputs("[S ", stdout);
-			arg1->print(highlight);
-			putchar(' ');
-			arg2->print(highlight);
-			putchar(']');
-			break;
-		case I1:
-			putchar('.');
-			arg1->print(highlight);
-			break;
-		case LazyRead:
-			fputs("LazyRead", stdout);
-			break;
-		case Inc:
-			fputs("Inc", stdout);
-			break;
-		case Num:
-			printf("%d", numeric_arg1);
-			break;
-		default:
-			putchar('?');
-	}
-	if (this == highlight) {
-		fputs("###", stdout);
-	}
-}
-#endif
 
 Expr *make_church_char(int ch) {
 	if (ch < 0 || ch > 256) {
