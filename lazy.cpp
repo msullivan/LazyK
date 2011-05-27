@@ -104,16 +104,6 @@ struct Expr {
 #if 0
 	void print(Expr*);
 #endif
-	// caller loses original ref, gets returned ref
-	Expr* drop_i1() {
-		Expr* cur = this;
-		if (type == I1) {
-			do {
-				cur = cur->arg1;
-			} while (cur->type == I1);
-		}
-		return cur;
-	}
 };
 
 
@@ -308,7 +298,7 @@ void Expr::print(Expr* highlight) {
 }
 #endif
 
-Expr* make_church_char(int ch) {
+Expr *make_church_char(int ch) {
 	if (ch < 0 || ch > 256) {
 		ch = 256;
 	}
@@ -319,6 +309,16 @@ Expr* make_church_char(int ch) {
 	return cached_church_chars[ch];
 }
 
+static inline Expr *drop_i1(Expr *cur) {
+	// Seperating out this into two checks gets a real speed win.
+	// Presumably due to branch prediction.
+	if (cur->type == I1) {
+		do {
+			cur = cur->arg1;
+		} while (cur->type == I1);
+	}
+	return cur;
+}
 
 static Expr *partial_eval(Expr *node);
 
@@ -327,7 +327,7 @@ static Expr *partial_eval(Expr *node);
 static inline Expr *partial_eval_primitive_application(Expr *e) {
 	INC_COUNTER(prim_apps);
 
-	e->arg2 = e->arg2->drop_i1(); // do it in place to free up space
+	e->arg2 = drop_i1(e->arg2); // do it in place to free up space
 	Expr *lhs = e->arg1, *rhs = e->arg2;
 
 	switch (lhs->type) {
@@ -425,13 +425,13 @@ static Expr *partial_eval(Expr *node) {
 	Expr *prev = 0;
 	Expr *cur = node;
 	for (;;) {
-		cur = cur->drop_i1();
+		cur = drop_i1(cur);
 		// Chase down the left hand side (while building a list of
 		// where we came from linked through arg1) until we find
 		// something that isn't an application. Once we have that,
 		// we can apply the primitive, and then repeat.
 		while (cur->type == A) {
-			Expr* next = cur->arg1->drop_i1();
+			Expr* next = drop_i1(cur->arg1);
 			cur->arg1 = prev;
 			prev = cur; cur = next;
 		}
