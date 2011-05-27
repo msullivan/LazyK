@@ -210,14 +210,19 @@ static inline void check(int n) {
 	}
 }
 
-static inline void check_rooted(int n, Expr *&e1, Expr *&e2) {
+static inline void root(Expr *e) {
+	roots[root_stack_top++] = e;
+}
+static inline Expr *unroot() {
+	return roots[--root_stack_top];
+}
+
+
+static inline void check_rooted(int n, Expr *&e) {
 	if (is_exhausted(n)) {
-		roots[root_stack_top++] = e1;
-		roots[root_stack_top++] = e2;
+		root(e);
 		oom(n);
-		root_stack_top -= 2;
-		e1 = roots[root_stack_top];
-		e2 = roots[root_stack_top+1];
+		e = unroot();
 	}
 }
 
@@ -227,6 +232,7 @@ static inline Expr* partial_apply(Expr* lhs, Expr* rhs) { // 1 alloc
 	// execution speed.
 	return new Expr(A, lhs, rhs);
 }
+
 
 #if 0
 void Expr::print(Expr* highlight) {
@@ -302,17 +308,10 @@ static Expr *partial_eval(Expr *node);
 
 // This function modifies the object in-place so that
 // all references to it see the new version.
-void partial_eval_primitive_application() {
+Expr *partial_eval_primitive_application(Expr *e) {
 	INC_COUNTER(prim_apps);
 
-	Expr *e = roots[root_stack_top-2];
-	
 	e->arg2 = e->arg2->drop_i1(); // do it in place to free up space
-//	Expr *arg1 = e->arg1;
-//	Expr *arg2 = e->arg2;
-//	check(6);
-
-	// arg1 and arg2 are now uninitialized space
 
 	switch (e->arg1->type) {
 	case K: // 0 allocs
@@ -336,14 +335,14 @@ void partial_eval_primitive_application() {
 		e->arg2 = e->arg2;
 		break;
 	case LazyRead: // 6 allocs (4+2 from S2)
-		check(6); e = roots[root_stack_top-2];
+		check_rooted(6, e);
 		e->arg1->type = S2;
 		e->arg1->arg1 = new Expr(S2, &cI, new Expr(K1, make_church_char(getchar())));
 		e->arg1->arg2 = new Expr(K1, new Expr(LazyRead));
 		// fall thru
 	case S2: // 2 allocs
 	{
-		check(2); e = roots[root_stack_top-2];
+		check_rooted(2, e);
 		//type = A;
 		Expr* lhs = e->arg1;
 		Expr* rhs = e->arg2;
@@ -354,8 +353,9 @@ void partial_eval_primitive_application() {
 	case Inc: // 0 allocs - but recursion
 	{
 		// Inc is the one place we need to force evaluation of an rhs
+		root(e);
 		Expr *arg2_new = partial_eval(e->arg2);
-		e = roots[root_stack_top-2];
+		e = unroot();
 		e->arg2 = arg2_new;
 
 		e->type = Num;
@@ -377,6 +377,8 @@ void partial_eval_primitive_application() {
 		abort();
 		exit(4);
 	}
+
+	return e;
 }
 
 /*
@@ -399,9 +401,8 @@ Expr* Expr::partial_eval() {
 static Expr *partial_eval(Expr *node) {
 	INC_COUNTER(part_apps);
 
-	Expr **cur_root = &roots[root_stack_top];
-	Expr **prev_root = &roots[root_stack_top+1];
-	root_stack_top += 2;
+	Expr **prev_root = &roots[root_stack_top];
+	root(0);
 	
 	Expr *prev = 0;
 	Expr *cur = node;
@@ -423,14 +424,13 @@ static Expr *partial_eval(Expr *node) {
 		prev = cur->arg1;
 		cur->arg1 = next;
 
-		*cur_root = cur;
 		*prev_root = prev;
-		partial_eval_primitive_application();
-		cur = *cur_root;
+		cur = partial_eval_primitive_application(cur);
 		prev = *prev_root;
 	}
 
-	root_stack_top -= 2;
+	unroot();
+
 	return cur;
 }
 
