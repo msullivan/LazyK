@@ -61,8 +61,11 @@ static char space1[HEAP_SIZE];
 static char space2[HEAP_SIZE];
 static Expr *from_space_start = (Expr *)space1;
 static Expr *from_space_end = (Expr *)(space1 + HEAP_SIZE);
-static Expr *next_alloc = from_space_start;
 static Expr *to_space_start = (Expr *)space2;
+static Expr *to_space_end = (Expr *)(space2 + HEAP_SIZE);
+static Expr *next_alloc = from_space_start;
+static Expr **work_stack_top = (Expr **)from_space_end;
+
 
 enum Type { A, K, K1, S, S1, S2, I1, LazyRead, Inc, Num, Free };
 
@@ -147,6 +150,13 @@ static inline bool in_arena(Expr *p) {
 	return p >= from_space_start && p < from_space_end;
 }
 
+static inline void push_work(Expr *e) {
+	*(--work_stack_top) = e;
+}
+static inline Expr *pop_work() {
+	return *work_stack_top++;
+}
+
 static inline Expr *copy_object(Expr *obj) {
 	if (!in_arena(obj)) return obj;
 	if (obj->forward) {
@@ -155,9 +165,10 @@ static inline Expr *copy_object(Expr *obj) {
 	}
 
 	*next_alloc = *obj;
-	obj->type = (Type)1337;
-	obj->arg1 = obj->arg2 = (Expr*)(-1);
+	//obj->type = (Type)1337;
+	//obj->arg1 = obj->arg2 = (Expr*)(-1);
 
+	push_work(next_alloc);
 	obj->forward = next_alloc;
 	//fprintf(stderr, "forwarding %p to %p\n", obj, obj->forward);
 	return next_alloc++;
@@ -167,29 +178,34 @@ static void gc() {
 	INC_COUNTER(gcs);
 	// Set up next_alloc to point into the to-space
 	next_alloc = to_space_start;
+	work_stack_top = (Expr **)to_space_end;
 
 	// Process the roots
 	for (int i = 0; i < root_stack_top; i++) {
 		roots[i] = copy_object(roots[i]);
 	}
+
 	for (unsigned i = 0; i < sizeof(cached_church_chars)/sizeof(cached_church_chars[0]); i++) {
 		cached_church_chars[i] = copy_object(cached_church_chars[i]);
 	}
 
-	Expr *cursor = to_space_start;
-	while (cursor < next_alloc) {
+	while ((Expr *)work_stack_top != to_space_end) {
+		//assert((Expr *)work_stack_top > next_alloc);
+		Expr *cursor = pop_work();
+
 		if (cursor->type != Num) {
 			cursor->arg1 = copy_object(cursor->arg1);
 			cursor->arg2 = copy_object(cursor->arg2);
 		}
-		cursor++;
 	}
 
 	// Do the swap
 	Expr *tmp = from_space_start;
 	from_space_start = to_space_start;
 	to_space_start = tmp;
-	from_space_end = (Expr *)((char *)from_space_start + HEAP_SIZE);
+	tmp = from_space_end;
+	from_space_end = to_space_end;
+	to_space_end = tmp;
 }
 
 static inline bool is_exhausted(int n) {
@@ -216,7 +232,6 @@ static inline void root(Expr *e) {
 static inline Expr *unroot() {
 	return roots[--root_stack_top];
 }
-
 
 static inline void check_rooted(int n, Expr *&e) {
 	if (is_exhausted(n)) {
