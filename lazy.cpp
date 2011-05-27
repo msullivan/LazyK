@@ -158,6 +158,7 @@ static inline Expr *pop_work() {
 }
 
 static inline Expr *copy_object(Expr *obj) {
+	//assert(obj != (Expr*)(-2));
 	if (!in_arena(obj)) return obj;
 	if (obj->forward) {
 		//fprintf(stderr, "%p -> %p\n", obj, obj->forward);
@@ -166,7 +167,7 @@ static inline Expr *copy_object(Expr *obj) {
 
 	*next_alloc = *obj;
 	//obj->type = (Type)1337;
-	//obj->arg1 = obj->arg2 = (Expr*)(-1);
+	//obj->arg1 = obj->arg2 = (Expr*)(-2);
 
 	push_work(next_alloc);
 	obj->forward = next_alloc;
