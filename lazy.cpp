@@ -80,9 +80,11 @@ struct Expr {
 
 	static void* operator new(unsigned) {
 		INC_COUNTER(news);
-		if (next_alloc >= from_space_end) {
-			oom(1);
-		}
+		// We don't do an oom check. The caller better have already
+		// done it with check or check_rooted.
+		//if (next_alloc >= from_space_end) {
+		//	oom(1);
+		//}
 		return next_alloc++;
 	}
 
