@@ -9,4 +9,4 @@
               dst
               (self self (cons (car src) dst) (cdr src)) )))))
 
-(print-as-jot (laze 'rev))
+(print-as-unlambda (laze 'rev))

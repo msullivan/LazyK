@@ -23,4 +23,4 @@
 
 (lazy-def '(iota x) '(x S K))
 
-(print-as-iota (laze 'main))
+(print-as-unlambda (laze 'main))

@@ -140,6 +140,6 @@
                (self self (cdr list)) )))))
 
 
-(print-as-cc (laze 'unix-sort))
+(print-as-unlambda (laze 'unix-sort))
 (newline)
-(print-as-cc (laze 'bwt))
+(print-as-unlambda (laze 'bwt))

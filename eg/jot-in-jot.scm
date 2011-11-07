@@ -18,4 +18,4 @@
          (cons (lambda (parse f input) (parse (s (k f)) (cdr input)))
                (list-of (lambda (parse f input) (f input))) ))))
 
-(print-as-jot (laze 'main))
+(print-as-unlambda (laze 'main))
