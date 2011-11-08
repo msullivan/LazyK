@@ -37,6 +37,7 @@
 
 #define alloc(ty) calloc(sizeof(ty), 1)
 #define alloc_array(ty,size) calloc(sizeof(ty), size)
+
 int c(int ch) { putchar(ch); return 0; }
 int num(int num) { printf("%d", num); return 0; }
 int fail() { abort(); return 0; }
@@ -426,7 +427,9 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 		check_rooted(s, 6, e, prev);
 		Expr *lhs = e->arg1;
 		lhs->type = 6/*S2*/;
-		lhs->arg1 = newExpr2(s, 6/*S2*/, s->cI, newExpr1(s, 3/*K1*/, make_church_char(s, getchar())));
+		lhs->arg1 = newExpr2(s, 6/*S2*/, s->cI,
+		                     newExpr1(s, 3/*K1*/,
+							          make_church_char(s, do_read())));
 		lhs->arg2 = newExpr1(s, 3/*K1*/, newExpr(s, 8/*LazyRead*/));
 
 		// duplicate the S2 code
@@ -482,9 +485,9 @@ Expr *parse_expr(state *s) {
 
 	// Wait until we get something we care about
 	do {
-		ch = getchar();
+		ch = do_read();
 		if (ch == 35/*'#'*/) {
-			while ((ch = getchar()) != 10/*'\n'*/)
+			while ((ch = do_read()) != 10/*'\n'*/)
 				;
 		}
 	} while (ch == 10/*'\n'*/ || ch == 32/*' '*/);
