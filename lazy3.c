@@ -141,6 +141,8 @@ static inline int to_number(ExprP e) {
 	return result;
 }
 
+ExprP make_church_char(int ch);
+
 void setup_state(void) {
 	// Set next_alloc to be the start of the constants region so we
 	// allocate from there first.
@@ -158,7 +160,6 @@ void setup_state(void) {
 	s->cInc = newExpr(Inc);
 	s->cZero = newExpr(Num);
 
-
 	// Set up gc fields
 	s->from_space_start = (ExprP)s->space1;
 	s->from_space_end = (ExprP)(s->space1 + HEAP_SIZE);
@@ -171,7 +172,10 @@ void setup_state(void) {
 	s->church2int_root = &s->roots[1];
 	s->root_stack_top = 2;
 
-	
+	// Preintialize the chuch numeral table
+	for (unsigned i = 0; i <= 256; i++) {
+		make_church_char(i);
+	}
 }
 
 
@@ -214,8 +218,7 @@ static void gc() {
 	for (int i = 0; i < s->root_stack_top; i++) {
 		s->roots[i] = copy_object(s->roots[i]);
 	}
-
-	for (unsigned i = 0; i < sizeof(s->cached_church_chars)/sizeof(s->cached_church_chars[0]); i++) {
+	for (unsigned i = 0; i <= 256; i++) {
 		s->cached_church_chars[i] = copy_object(s->cached_church_chars[i]);
 	}
 
@@ -505,11 +508,6 @@ static int church2int(ExprP church) {
 int main(int argc, char** argv) {
 	setup_state();
 	
-	// Preintialize the chuch numeral table
-	for (unsigned i = 0; i < 257; i++) {
-		make_church_char(i);
-	}
-
 	FILE *f = stdin;
 	if (argc == 2) {
 		f = fopen(argv[1], "r");
