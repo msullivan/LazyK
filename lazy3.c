@@ -532,6 +532,7 @@ Expr *cdr(state *s, Expr *list) {
 }
 
 int church2int(state *s, Expr *church) {
+	s->roots[1] = church;
 	check(s, 2);
 	Expr *e = partial_apply(s, partial_apply(s, church, s->cInc), s->cZero);
 	s->roots[1] = e;
