@@ -409,23 +409,9 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr *&prev) {
 	return e;
 }
 
-/*
-Expr* Expr::partial_eval() {
-	Expr *cur = this;
-	for (;;) {
-		cur = cur->drop_i1();
-		if (cur->type != A) {
-			return cur;
-		}
-		cur->arg1 = cur->arg1->partial_eval();
-		cur->partial_eval_primitive_application();
-	}
-}
-*/
-
 // evaluates until the toplevel thing is not a function application.
-// a stack of nodes that are waiting for their first argument to be evaluated is built,
-// chained through the first argument field
+// a stack of nodes that are waiting for their first argument to be
+// evaluated is built, chained through the first argument field
 static Expr *partial_eval(Expr *node) {
 	INC_COUNTER(part_apps);
 
