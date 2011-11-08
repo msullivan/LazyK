@@ -1,4 +1,4 @@
-// Lazy K interpreter in C
+// Lazy K interpreter in C++.
 // For usage see usage() function below.
 // Copyright 2002 Ben Rudiak-Gould. Distributed under the GPL.
 // Copyright 2011 Michael Sullivan.
@@ -41,119 +41,152 @@
 #include <stdbool.h>
 #include <ctype.h>
 
+#define MB (1024*1024)
+#define HEAP_SIZE (64*MB)
 #if DEBUG_COUNTERS
-static int news = 0;
-static int gcs = 0;
-static int prim_apps = 0;
-static int part_apps = 0;
-
-#define INC_COUNTER(n) ((n)++)
+#define INC_COUNTER(n) ((s->n)++)
 #else
 #define INC_COUNTER(n)
 #endif
+#define MAX_ROOTS 10000
+
 
 struct Expr;
 typedef struct Expr Expr;
+typedef struct Expr * ExprP;
 
 static void oom(int n);
 
-// Garbage collection
-#define MB (1024*1024)
-#define HEAP_SIZE (64*MB)
-static char space1[HEAP_SIZE];
-static char space2[HEAP_SIZE];
-static Expr *from_space_start = (Expr *)space1;
-static Expr *from_space_end = (Expr *)(space1 + HEAP_SIZE);
-static Expr *to_space_start = (Expr *)space2;
-static Expr *to_space_end = (Expr *)(space2 + HEAP_SIZE);
-static Expr *next_alloc = (Expr *)space1;//from_space_start;
-static Expr **work_stack_top = (Expr **)(space1 + HEAP_SIZE);//(Expr **)from_space_end;
-
-
 typedef enum Type { A, K, K1, S, S1, S2, I1, LazyRead, Inc, Num, Free } Type;
 
-
 struct Expr {
-	Expr *forward;
-	union {
-		Expr *arg1;
-		int numeric_arg1; // XXX
-	};
-	Expr *arg2;
+	ExprP forward;
+	ExprP arg1;
+	int numeric_arg1; // XXX
+	ExprP arg2;
 	Type type;
 };
 
-static inline Expr *alloc_expr() {
+struct state_t {
+	// Perf counters
+	int news;
+	int gcs;
+	int prim_apps;
+	int part_apps;
+
+	// Garbage collection
+	char space1[HEAP_SIZE];
+	char space2[HEAP_SIZE];
+	ExprP from_space_start;
+	ExprP from_space_end;
+	ExprP to_space_start;
+	ExprP to_space_end;
+	ExprP next_alloc;
+	ExprP *work_stack_top;
+
+	// Roots
+	// we need 2 roots for toplevel and church2int,
+	// and then 2 per simultaneous invocation of partial_eval.
+	// partial_eval only recurses as deep as the biggest number printed,
+	// which can't /reasonably/ be above 512. This should be more than enough.
+	ExprP roots[MAX_ROOTS];
+	ExprP *toplevel_root;
+	ExprP *church2int_root;
+	int root_stack_top;
+	ExprP cached_church_chars[257];
+
+	// Preconstructed terms
+	Expr constants[10];
+	
+	ExprP cK;
+	ExprP cS;
+	ExprP cI;
+	ExprP KI;
+
+	ExprP SI;
+	ExprP KS;
+	ExprP KK;
+	ExprP SKSK;
+
+	ExprP cInc;
+	ExprP cZero;
+} state;
+struct state_t *s = &state;
+
+
+static inline ExprP alloc_expr() {
 	INC_COUNTER(news);
 	// We don't do an oom check. The caller better have already
 	// done it with check or check_rooted.
 	//if (next_alloc >= from_space_end) {
 	//	oom(1);
 	//}
-	return next_alloc++;
+	return s->next_alloc++;
 }
 
-static inline Expr *newExpr2(Type t, Expr *a1, Expr *a2) {
-	struct Expr *e = alloc_expr();
+static inline ExprP newExpr2(Type t, ExprP a1, ExprP a2) {
+	ExprP e = alloc_expr();
 	e->forward = 0;
 	e->type = t;
 	e->arg1 = a1; e->arg2 = a2;
+	e->numeric_arg1 = 0;
 	return e;
 }
-static inline Expr *newExpr1(Type t, Expr *a1) { return newExpr2(t, a1, NULL); }
-static inline Expr *newExpr(Type t) { return newExpr2(t, NULL, NULL); }
+static inline ExprP newExpr1(Type t, ExprP a1) { return newExpr2(t, a1, NULL); }
+static inline ExprP newExpr(Type t) { return newExpr2(t, NULL, NULL); }
 
 
-static inline int to_number(Expr *e) {
+static inline int to_number(ExprP e) {
 	int result = (e->type == Num) ? e->numeric_arg1 : -1;
 	return result;
 }
 
-#define Expr0(T) {NULL, NULL, NULL, T}
-#define Expr1(T, ARG1) {NULL, ARG1, NULL, T}
-#define Expr2(T, ARG1, ARG2) {NULL, ARG1, ARG2, T}
+void setup_state(void) {
+	// Set next_alloc to be the start of the constants region so we
+	// allocate from there first.
+	s->next_alloc = s->constants;
+	s->cK = newExpr(K);
+	s->cS = newExpr(S);
+	s->cI = newExpr2(S2, s->cK, s->cK);
+	s->KI = newExpr1(K1, s->cI);
+
+	s->SI = newExpr1(S1, s->cI);
+	s->KS = newExpr1(K1, s->cS);
+	s->KK = newExpr1(K1, s->cK);
+	s->SKSK = newExpr2(S2, s->KS, s->cK);
+
+	s->cInc = newExpr(Inc);
+	s->cZero = newExpr(Num);
 
 
-Expr cK = Expr0(K);
-Expr cS = Expr0(S);
-Expr cI = Expr2(S2, &cK, &cK);
-Expr KI = Expr1(K1, &cI);
+	// Set up gc fields
+	s->from_space_start = (ExprP)s->space1;
+	s->from_space_end = (ExprP)(s->space1 + HEAP_SIZE);
+	s->to_space_start = (ExprP)s->space2;
+	s->to_space_end = (ExprP)(s->space2 + HEAP_SIZE);
+	s->next_alloc = s->from_space_start;
+	s->work_stack_top = (ExprP*)s->from_space_end;
 
-Expr SI = Expr1(S1, &cI);
-Expr KS = Expr1(K1, &cS);
-Expr KK = Expr1(K1, &cK);
-Expr SKSK = Expr2(S2, &KS, &cK);
+	s->toplevel_root = &s->roots[0];
+	s->church2int_root = &s->roots[1];
+	s->root_stack_top = 2;
 
-Expr cInc = Expr0(Inc);
-Expr cZero = Expr0(Num);
-
-
-
-// Roots
-// we need 2 roots for toplevel and church2int,
-// and then 2 per simultaneous invocation of partial_eval.
-// partial_eval only recurses as deep as the biggest number printed,
-// which can't /reasonably/ be above 512. This should be more than enough.
-#define MAX_ROOTS 10000
-static Expr *roots[MAX_ROOTS];
-static Expr **toplevel_root = &roots[0];
-static Expr **church2int_root = &roots[1];
-static int root_stack_top = 2;
-static Expr *cached_church_chars[257];
-
-
-static inline bool in_arena(Expr *p) {
-	return p >= from_space_start && p < from_space_end;
+	
 }
 
-static inline void push_work(Expr *e) {
-	*(--work_stack_top) = e;
-}
-static inline Expr *pop_work() {
-	return *work_stack_top++;
+
+static inline bool in_arena(ExprP p) {
+	return p >= s->from_space_start && p < s->from_space_end;
 }
 
-static inline Expr *copy_object(Expr *obj) {
+static inline void push_work(ExprP e) {
+	*(--s->work_stack_top) = e;
+}
+static inline ExprP pop_work() {
+	return *s->work_stack_top++;
+}
+
+static inline ExprP copy_object(ExprP obj) {
 	//assert(obj != (Expr*)(-2));
 	if (!in_arena(obj)) return obj;
 	if (obj->forward) {
@@ -161,34 +194,34 @@ static inline Expr *copy_object(Expr *obj) {
 		return obj->forward;
 	}
 
-	*next_alloc = *obj;
+	*s->next_alloc = *obj;
 	//obj->type = (Type)1337;
 	//obj->arg1 = obj->arg2 = (Expr*)(-2);
 
-	push_work(next_alloc);
-	obj->forward = next_alloc;
+	push_work(s->next_alloc);
+	obj->forward = s->next_alloc;
 	//fprintf(stderr, "forwarding %p to %p\n", obj, obj->forward);
-	return next_alloc++;
+	return s->next_alloc++;
 }
 
 static void gc() {
 	INC_COUNTER(gcs);
 	// Set up next_alloc to point into the to-space
-	next_alloc = to_space_start;
-	work_stack_top = (Expr **)to_space_end;
+	s->next_alloc = s->to_space_start;
+	s->work_stack_top = (ExprP *)s->to_space_end;
 
 	// Process the roots
-	for (int i = 0; i < root_stack_top; i++) {
-		roots[i] = copy_object(roots[i]);
+	for (int i = 0; i < s->root_stack_top; i++) {
+		s->roots[i] = copy_object(s->roots[i]);
 	}
 
-	for (unsigned i = 0; i < sizeof(cached_church_chars)/sizeof(cached_church_chars[0]); i++) {
-		cached_church_chars[i] = copy_object(cached_church_chars[i]);
+	for (unsigned i = 0; i < sizeof(s->cached_church_chars)/sizeof(s->cached_church_chars[0]); i++) {
+		s->cached_church_chars[i] = copy_object(s->cached_church_chars[i]);
 	}
 
-	while ((Expr *)work_stack_top != to_space_end) {
-		//assert((Expr *)work_stack_top > next_alloc);
-		Expr *cursor = pop_work();
+	while ((ExprP)s->work_stack_top != s->to_space_end) {
+		//assert((ExprP)work_stack_top > next_alloc);
+		ExprP cursor = pop_work();
 
 		if (cursor->type != Num) {
 			cursor->arg1 = copy_object(cursor->arg1);
@@ -197,16 +230,16 @@ static void gc() {
 	}
 
 	// Do the swap
-	Expr *tmp = from_space_start;
-	from_space_start = to_space_start;
-	to_space_start = tmp;
-	tmp = from_space_end;
-	from_space_end = to_space_end;
-	to_space_end = tmp;
+	ExprP tmp = s->from_space_start;
+	s->from_space_start = s->to_space_start;
+	s->to_space_start = tmp;
+	tmp = s->from_space_end;
+	s->from_space_end = s->to_space_end;
+	s->to_space_end = tmp;
 }
 
 static inline bool is_exhausted(int n) {
-	return next_alloc + n >= from_space_end;
+	return s->next_alloc + n >= s->from_space_end;
 }
 
 static void oom(int n) {
@@ -223,14 +256,14 @@ static inline void check(int n) {
 	}
 }
 
-static inline void root(Expr *e) {
-	roots[root_stack_top++] = e;
+static inline void root(ExprP e) {
+	s->roots[s->root_stack_top++] = e;
 }
-static inline Expr *unroot() {
-	return roots[--root_stack_top];
+static inline ExprP unroot() {
+	return s->roots[--s->root_stack_top];
 }
 
-static inline void check_rooted(int n, Expr **e1, Expr **e2) {
+static inline void check_rooted(int n, ExprP *e1, ExprP *e2) {
 	if (is_exhausted(n)) {
 		root(*e1);
 		root(*e2);
@@ -240,7 +273,7 @@ static inline void check_rooted(int n, Expr **e1, Expr **e2) {
 	}
 }
 
-static inline Expr *partial_apply(Expr *lhs, Expr *rhs) { // 1 alloc
+static inline ExprP partial_apply(ExprP lhs, ExprP rhs) { // 1 alloc
 	// You could do something more complicated here,
 	// but I tried it and it didn't seem to improve
 	// execution speed.
@@ -248,24 +281,24 @@ static inline Expr *partial_apply(Expr *lhs, Expr *rhs) { // 1 alloc
 }
 
 
-Expr *make_church_char(int ch) {
+ExprP make_church_char(int ch) {
 	if (ch < 0 || ch > 256) {
 		ch = 256;
 	}
 
-	if (cached_church_chars[ch] == 0) {
+	if (s->cached_church_chars[ch] == 0) {
 		if (ch == 0) {
-			cached_church_chars[ch] = &KI;
+			s->cached_church_chars[ch] = s->KI;
 		} else if (ch == 1) {
-			cached_church_chars[ch] = &cI;
+			s->cached_church_chars[ch] = s->cI;
 		} else {		
-			cached_church_chars[ch] = newExpr2(S2, &SKSK, make_church_char(ch-1));
+			s->cached_church_chars[ch] = newExpr2(S2, s->SKSK, make_church_char(ch-1));
 		}
 	}
-	return cached_church_chars[ch];
+	return s->cached_church_chars[ch];
 }
 
-static inline Expr *drop_i1(Expr *cur) {
+static inline ExprP drop_i1(ExprP cur) {
 	// Seperating out this into two checks gets a real speed win.
 	// Presumably due to branch prediction.
 	if (cur->type == I1) {
@@ -276,17 +309,17 @@ static inline Expr *drop_i1(Expr *cur) {
 	return cur;
 }
 
-static Expr *partial_eval(Expr *node);
+static ExprP partial_eval(ExprP node);
 
 // This function modifies the object in-place so that
 // all references to it see the new version.
 // An additional root gets past in by reference so that we can root it
 // if we need to. I don't really like it but it is fast.
-static inline Expr *partial_eval_primitive_application(Expr *e, Expr **prev) {
+static inline ExprP partial_eval_primitive_application(ExprP e, ExprP *prev) {
 	INC_COUNTER(prim_apps);
 
 	e->arg2 = drop_i1(e->arg2); // do it in place to free up space
-	Expr *lhs = e->arg1, *rhs = e->arg2;
+	ExprP lhs = e->arg1, rhs = e->arg2;
 
 	switch (lhs->type) {
 	case K: // 0 allocs
@@ -312,9 +345,9 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr **prev) {
 	case LazyRead: // 6 allocs (4+2 from S2)
 	{
 		check_rooted(6, &e, prev);
-		Expr *lhs = e->arg1;
+		ExprP lhs = e->arg1;
 		lhs->type = S2;
-		lhs->arg1 = newExpr2(S2, &cI, newExpr1(K1, make_church_char(getchar())));
+		lhs->arg1 = newExpr2(S2, s->cI, newExpr1(K1, make_church_char(getchar())));
 		lhs->arg2 = newExpr1(K1, newExpr(LazyRead));
 		// fall thru
 	}
@@ -322,7 +355,7 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr **prev) {
 	{
 		check_rooted(2, &e, prev);
 		//type = A; // XXX: Why is this OK?
-		Expr *lhs = e->arg1, *rhs = e->arg2;
+		ExprP lhs = e->arg1, rhs = e->arg2;
 		e->arg1 = partial_apply(lhs->arg1, rhs);
 		e->arg2 = partial_apply(lhs->arg2, rhs);
 		break;
@@ -332,7 +365,7 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr **prev) {
 		// Inc is the one place we need to force evaluation of an rhs
 		root(e);
 		root(*prev);
-		Expr *rhs_res = partial_eval(rhs);
+		ExprP rhs_res = partial_eval(rhs);
 		*prev = unroot();
 		e = unroot();
 
@@ -360,8 +393,8 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr **prev) {
 }
 
 /*
-Expr *Expr::partial_eval() {
-	Expr *cur = this;
+ExprP Expr::partial_eval() {
+	ExprP cur = this;
 	for (;;) {
 		cur = cur->drop_i1();
 		if (cur->type != A) {
@@ -376,11 +409,11 @@ Expr *Expr::partial_eval() {
 // evaluates until the toplevel thing is not a function application.
 // a stack of nodes that are waiting for their first argument to be evaluated is built,
 // chained through the first argument field
-static Expr *partial_eval(Expr *node) {
+static ExprP partial_eval(ExprP node) {
 	INC_COUNTER(part_apps);
 
-	Expr *prev = 0;
-	Expr *cur = node;
+	ExprP prev = 0;
+	ExprP cur = node;
 	for (;;) {
 		cur = drop_i1(cur);
 		// Chase down the left hand side (while building a list of
@@ -388,14 +421,14 @@ static Expr *partial_eval(Expr *node) {
 		// something that isn't an application. Once we have that,
 		// we can apply the primitive, and then repeat.
 		while (cur->type == A) {
-			Expr *next = drop_i1(cur->arg1);
+			ExprP next = drop_i1(cur->arg1);
 			cur->arg1 = prev;
 			prev = cur; cur = next;
 		}
 		if (!prev) { // we've gotten it down to something that isn't an application
 			break;
 		}
-		Expr *next = cur; cur = prev;
+		ExprP next = cur; cur = prev;
 		prev = cur->arg1;
 		cur->arg1 = next;
 
@@ -406,7 +439,7 @@ static Expr *partial_eval(Expr *node) {
 }
 
 
-Expr *parse_expr(FILE* f) {
+ExprP parse_expr(FILE* f) {
 	int ch;
 
 	// Wait until we get something we care about
@@ -421,16 +454,16 @@ Expr *parse_expr(FILE* f) {
 	switch (ch) {
 	case '`':
 	{
-		Expr *p = parse_expr(f);
-		Expr *q = parse_expr(f);
+		ExprP p = parse_expr(f);
+		ExprP q = parse_expr(f);
 		return partial_apply(p, q);
 	}
 	case 'k': case 'K':
-		return &cK;
+		return s->cK;
 	case 's': case 'S':
-		return &cS;
+		return s->cS;
 	case 'i': case 'I':
-		return &cI;
+		return s->cI;
 	default:
 		printf("Invalid character!\n");
 		exit(1);
@@ -438,8 +471,8 @@ Expr *parse_expr(FILE* f) {
 	return 0;
 }
 
-Expr *parse_expr_top(FILE* f) {
-	Expr *e = parse_expr(f);
+ExprP parse_expr_top(FILE* f) {
+	ExprP e = parse_expr(f);
 	if (fgetc(f) != '\n') {
 		fprintf(stderr, "input program missing trailing newline\n");
 		exit(1);
@@ -447,31 +480,33 @@ Expr *parse_expr_top(FILE* f) {
 	return e;
 }
 
-static Expr *car(Expr *list) {
-	return partial_apply(list, &cK);
+static ExprP car(ExprP list) {
+	return partial_apply(list, s->cK);
 }
 
-static Expr *cdr(Expr *list) {
-	return partial_apply(list, &KI);
+static ExprP cdr(ExprP list) {
+	return partial_apply(list, s->KI);
 }
 
-static int church2int(Expr *church) {
+static int church2int(ExprP church) {
 	check(2);
-	Expr *e = partial_apply(partial_apply(church, &cInc), &cZero);
-	*church2int_root = e;
+	ExprP e = partial_apply(partial_apply(church, s->cInc), s->cZero);
+	*s->church2int_root = e;
 	int result = to_number(partial_eval(e));
 	if (result == -1) {
 		fputs("Runtime error: invalid output format (result was not a number)\n", stderr);
 		exit(3);
 	}
-	*church2int_root = 0;
+	*s->church2int_root = 0;
 	return result;
 }
 
 
 int main(int argc, char** argv) {
+	setup_state();
+	
 	// Preintialize the chuch numeral table
-	for (unsigned i = 0; i < sizeof(cached_church_chars)/sizeof(cached_church_chars[0]); i++) {
+	for (unsigned i = 0; i < 257; i++) {
 		make_church_char(i);
 	}
 
@@ -483,11 +518,11 @@ int main(int argc, char** argv) {
 			exit(1);
 		}
 	}
-	Expr *e = parse_expr_top(f);
-	*toplevel_root = partial_apply(e, newExpr(LazyRead));
+	ExprP e = parse_expr_top(f);
+	*s->toplevel_root = partial_apply(e, newExpr(LazyRead));
 
 	for (;;) {
-		int ch = church2int(car(*toplevel_root));
+		int ch = church2int(car(*s->toplevel_root));
 		if (ch >= 256) {
 #if DEBUG_COUNTERS
 			fprintf(stderr, "     gcs: %d\n    news: %d\n", gcs, news);
@@ -497,6 +532,6 @@ int main(int argc, char** argv) {
 		}
 		putchar(ch);
 		fflush(stdout);
-		*toplevel_root = cdr(*toplevel_root);
+		*s->toplevel_root = cdr(*s->toplevel_root);
 	}
 }
