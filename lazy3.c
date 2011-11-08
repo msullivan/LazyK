@@ -46,7 +46,7 @@
 #else
 #define INC_COUNTER(n)
 #endif
-#define MAX_ROOTS 10000
+#define MAX_ROOTS 1000
 
 
 struct Expr;
@@ -56,13 +56,13 @@ struct state_t;
 
 void oom(struct state_t *s, int n);
 
-typedef enum Type { A, K, K1, S, S1, S2, I1, LazyRead, Inc, Num, Free } Type;
+typedef enum Type { A = 1, K, K1, S, S1, S2, I1, LazyRead, Inc, Num, Free } Type;
 
 struct Expr {
-	Expr *forward;
+	Expr *aux;
 	Expr *arg1;
 	Expr *arg2;
-	int numeric_arg1; // XXX
+	int numeric_arg1;
 	Type type;
 };
 #define MB (1024*1024)
@@ -77,14 +77,10 @@ typedef struct state_t {
 	int part_apps;
 
 	// Garbage collection
-	Expr space1[HEAP_SIZE];
-	Expr space2[HEAP_SIZE];
-	Expr *from_space_start;
-	Expr *from_space_end;
-	Expr *to_space_start;
-	Expr *to_space_end;
+	Expr space[HEAP_SIZE];
+	int free_slots;
 	Expr *next_alloc;
-	Expr **work_stack_top;
+	Expr *work_stack_top;
 
 	// Roots
 	// we need 2 roots for toplevel and church2int,
@@ -119,17 +115,19 @@ Expr *alloc_expr(state *s) {
 	INC_COUNTER(news);
 	// We don't do an oom check. The caller better have already
 	// done it with check or check_rooted.
-	//if (next_alloc >= from_space_end) {
+	//if (free_slots == 0) {
 	//	oom(1);
 	//}
 	Expr *expr = s->next_alloc;
-	s->next_alloc++;
+	s->next_alloc = expr->aux;
+	s->free_slots--;
+	expr->aux = NULL;
 	return expr;
 }
 
 Expr *newExpr2(state *s, Type t, Expr *a1, Expr *a2) {
 	Expr *e = alloc_expr(s);
-	e->forward = 0;
+	e->aux = 0;
 	e->type = t;
 	e->arg1 = a1; e->arg2 = a2;
 	e->numeric_arg1 = 0;
@@ -146,10 +144,26 @@ int to_number(Expr *e) {
 
 Expr *make_church_char(state *s, int ch);
 
+Expr *prepend(Expr *hd, Expr *tl) {
+	hd->aux = tl;
+	return hd;
+}
+
 void setup_state(state *s) {
-	// Set next_alloc to be the start of the constants region so we
-	// allocate from there first.
-	s->next_alloc = s->constants;
+	// Set up gc fields
+	s->free_slots = HEAP_SIZE;
+	Expr *hd = NULL;
+	for (int i = 0; i < HEAP_SIZE; i++) {
+		hd = prepend(&s->space[i], hd);
+	}
+	s->next_alloc = hd;
+	s->work_stack_top = NULL;
+
+	s->toplevel_root = &s->roots[0];
+	s->church2int_root = &s->roots[1];
+	s->root_stack_top = 2;
+
+	// Set up constants
 	s->cK = newExpr(s, K);
 	s->cS = newExpr(s, S);
 	s->cI = newExpr2(s, S2, s->cK, s->cK);
@@ -163,90 +177,71 @@ void setup_state(state *s) {
 	s->cInc = newExpr(s, Inc);
 	s->cZero = newExpr(s, Num);
 
-	// Set up gc fields
-	s->from_space_start = (ExprP)s->space1;
-	s->from_space_end = (ExprP)(s->space1 + HEAP_SIZE);
-	s->to_space_start = (ExprP)s->space2;
-	s->to_space_end = (ExprP)(s->space2 + HEAP_SIZE);
-	s->next_alloc = s->from_space_start;
-	s->work_stack_top = (ExprP*)s->from_space_end;
-
-	s->toplevel_root = &s->roots[0];
-	s->church2int_root = &s->roots[1];
-	s->root_stack_top = 2;
-
 	// Preintialize the chuch numeral table
 	for (unsigned i = 0; i <= 256; i++) {
 		make_church_char(s, i);
 	}
 }
 
-
-bool in_arena(state *s, Expr *p) {
-	return p >= s->from_space_start && p < s->from_space_end;
-}
-
 void push_work(state *s, Expr *e) {
-	--s->work_stack_top;
-	*s->work_stack_top = e;
+	s->work_stack_top = prepend(e, s->work_stack_top);
 }
 Expr *pop_work(state *s) {
-	return *s->work_stack_top++;
+	Expr *expr = s->work_stack_top;
+	s->work_stack_top = expr->aux;
+	expr->aux = NULL;
+	return expr;
 }
 
-Expr *copy_object(state *s, Expr *obj) {
-	//assert(obj != (Expr*)(-2));
-	if (!in_arena(s, obj)) return obj;
-	if (obj->forward) {
-		//fprintf(stderr, "%p -> %p\n", obj, obj->forward);
-		return obj->forward;
-	}
-
-	*s->next_alloc = *obj;
-	//obj->type = (Type)1337;
-	//obj->arg1 = obj->arg2 = (Expr*)(-2);
-
-	push_work(s, s->next_alloc);
-	obj->forward = s->next_alloc;
-	//fprintf(stderr, "forwarding %p to %p\n", obj, obj->forward);
-	return s->next_alloc++;
+void mark(state *s, Expr *e) {
+	if (e == NULL) return;
+	if ((int)e->type < 0) return;
+	e->type = -e->type;
+	push_work(s, e);
 }
 
+// Do a simple mark/sweep garbage collection over our heap 
 void gc(state *s) {
 	INC_COUNTER(gcs);
 	// Set up next_alloc to point into the to-space
-	s->next_alloc = s->to_space_start;
-	s->work_stack_top = (Expr **)s->to_space_end;
+	s->next_alloc = NULL;
+	s->free_slots = 0;
+	assert(s->work_stack_top == NULL);
 
 	// Process the roots
 	for (int i = 0; i < s->root_stack_top; i++) {
-		s->roots[i] = copy_object(s, s->roots[i]);
+		mark(s, s->roots[i]);
 	}
 	for (unsigned i = 0; i <= 256; i++) {
-		s->cached_church_chars[i] = copy_object(s, s->cached_church_chars[i]);
+		mark(s, s->cached_church_chars[i]);
 	}
 
-	while ((ExprP)s->work_stack_top != s->to_space_end) {
-		//assert((ExprP)work_stack_top > next_alloc);
-		Expr *cursor = pop_work(s);
+	// Mark
+	while (s->work_stack_top != NULL) {
+		Expr *expr = pop_work(s);
 
-		if (cursor->type != Num) {
-			cursor->arg1 = copy_object(s, cursor->arg1);
-			cursor->arg2 = copy_object(s, cursor->arg2);
+		if (expr->type != Num) {
+			mark(s, expr->arg1);
+			mark(s, expr->arg2);
 		}
 	}
 
-	// Do the swap
-	Expr *tmp = s->from_space_start;
-	s->from_space_start = s->to_space_start;
-	s->to_space_start = tmp;
-	tmp = s->from_space_end;
-	s->from_space_end = s->to_space_end;
-	s->to_space_end = tmp;
+	// Sweep
+	for (int i = 0; i < HEAP_SIZE; i++) {
+		Expr *e = &s->space[i];
+		if ((int)e->type < 0) { // Marked: clear the mark
+			e->type = -e->type;
+		} else { // Not marked: add to free list
+			s->next_alloc = prepend(e, s->next_alloc);
+			s->free_slots++;
+		}
+	}
+
+	//printf("gc done: reclaimed %d/%lu\n", s->free_slots, HEAP_SIZE);
 }
 
 bool is_exhausted(state *s, int n) {
-	return s->next_alloc + n >= s->from_space_end;
+	return s->free_slots < n;
 }
 
 void oom(state *s, int n) {
