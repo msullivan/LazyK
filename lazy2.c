@@ -256,9 +256,9 @@ Expr *make_church_char(int ch) {
 
 	if (cached_church_chars[ch] == 0) {
 		if (ch == 0) {
-			cached_church_chars[ch] = &cI;
-		} else if (ch == 1) {
 			cached_church_chars[ch] = &KI;
+		} else if (ch == 1) {
+			cached_church_chars[ch] = &cI;
 		} else {		
 			cached_church_chars[ch] = newExpr2(S2, &SKSK, make_church_char(ch-1));
 		}
