@@ -48,6 +48,8 @@
 #endif
 #define MAX_ROOTS 1000
 
+#define alloc(ty) calloc(sizeof(ty), 1)
+#define alloc_array(ty,size) calloc(sizeof(ty), size)
 
 struct Expr;
 typedef struct Expr Expr;
@@ -77,7 +79,7 @@ typedef struct state_t {
 	int part_apps;
 
 	// Garbage collection
-	Expr space[HEAP_SIZE];
+	Expr **space; //[HEAP_SIZE]
 	int free_slots;
 	Expr *next_alloc;
 	Expr *work_stack_top;
@@ -87,15 +89,11 @@ typedef struct state_t {
 	// and then 2 per simultaneous invocation of partial_eval.
 	// partial_eval only recurses as deep as the biggest number printed,
 	// which can't /reasonably/ be above 512. This should be more than enough.
-	Expr *roots[MAX_ROOTS];
-	Expr **toplevel_root;
-	Expr **church2int_root;
+	Expr **roots; // [MAX_ROOTS]
 	int root_stack_top;
-	Expr *cached_church_chars[257];
+	Expr **cached_church_chars; //[257]
 
 	// Preconstructed terms
-	Expr constants[10];
-	
 	Expr *cK;
 	Expr *cS;
 	Expr *cI;
@@ -109,7 +107,6 @@ typedef struct state_t {
 	Expr *cInc;
 	Expr *cZero;
 } state;
-struct state_t main_state;
 
 Expr *alloc_expr(state *s) {
 	INC_COUNTER(news);
@@ -151,17 +148,18 @@ Expr *prepend(Expr *hd, Expr *tl) {
 
 void setup_state(state *s) {
 	// Set up gc fields
+	s->space = alloc_array(Expr *, HEAP_SIZE);
+	s->roots = alloc_array(Expr *, MAX_ROOTS);
+
 	s->free_slots = HEAP_SIZE;
 	Expr *hd = NULL;
 	for (int i = 0; i < HEAP_SIZE; i++) {
-		hd = prepend(&s->space[i], hd);
+		s->space[i] = alloc(Expr);
+		hd = prepend(s->space[i], hd);
 	}
 	s->next_alloc = hd;
 	s->work_stack_top = NULL;
-
-	s->toplevel_root = &s->roots[0];
-	s->church2int_root = &s->roots[1];
-	s->root_stack_top = 2;
+	s->root_stack_top = 2; // 1 for toplevel, 1 for church2int
 
 	// Set up constants
 	s->cK = newExpr(s, K);
@@ -178,6 +176,7 @@ void setup_state(state *s) {
 	s->cZero = newExpr(s, Num);
 
 	// Preintialize the chuch numeral table
+	s->cached_church_chars = alloc_array(Expr *, 257);
 	for (unsigned i = 0; i <= 256; i++) {
 		make_church_char(s, i);
 	}
@@ -228,7 +227,7 @@ void gc(state *s) {
 
 	// Sweep
 	for (int i = 0; i < HEAP_SIZE; i++) {
-		Expr *e = &s->space[i];
+		Expr *e = s->space[i];
 		if ((int)e->type < 0) { // Marked: clear the mark
 			e->type = -e->type;
 		} else { // Not marked: add to free list
@@ -237,7 +236,7 @@ void gc(state *s) {
 		}
 	}
 
-	//printf("gc done: reclaimed %d/%lu\n", s->free_slots, HEAP_SIZE);
+	printf("gc done: reclaimed %d/%lu\n", s->free_slots, HEAP_SIZE);
 }
 
 bool is_exhausted(state *s, int n) {
@@ -259,10 +258,12 @@ void check(state *s, int n) {
 }
 
 void root(state *s, Expr *e) {
-	s->roots[s->root_stack_top++] = e;
+	s->roots[s->root_stack_top] = e;
+	s->root_stack_top++;
 }
 Expr *unroot(state *s) {
-	return s->roots[--s->root_stack_top];
+	--s->root_stack_top;
+	return s->roots[s->root_stack_top];
 }
 
 void check_rooted(state *s, int n, Expr **e1, Expr **e2) {
@@ -495,19 +496,19 @@ Expr *cdr(state *s, Expr *list) {
 int church2int(state *s, Expr *church) {
 	check(s, 2);
 	Expr *e = partial_apply(s, partial_apply(s, church, s->cInc), s->cZero);
-	*s->church2int_root = e;
+	s->roots[1] = e;
 	int result = to_number(partial_eval(s, e));
 	if (result == -1) {
 		fputs("Runtime error: invalid output format (result was not a number)\n", stderr);
 		exit(3);
 	}
-	*s->church2int_root = 0;
+	s->roots[1] = NULL;
 	return result;
 }
 
 
 int main(int argc, char** argv) {
-	state *s = &main_state;
+	state *s = alloc(state);
 	setup_state(s);
 	
 	FILE *f = stdin;
@@ -519,10 +520,10 @@ int main(int argc, char** argv) {
 		}
 	}
 	Expr *e = parse_expr_top(s, f);
-	*s->toplevel_root = partial_apply(s, e, newExpr(s, LazyRead));
+	s->roots[0] = partial_apply(s, e, newExpr(s, LazyRead));
 
 	for (;;) {
-		int ch = church2int(s, car(s, *s->toplevel_root));
+		int ch = church2int(s, car(s, s->roots[0]));
 		if (ch >= 256) {
 #if DEBUG_COUNTERS
 			fprintf(stderr, "     gcs: %d\n    news: %d\n", s->gcs, s->news);
@@ -532,6 +533,6 @@ int main(int argc, char** argv) {
 		}
 		putchar(ch);
 		fflush(stdout);
-		*s->toplevel_root = cdr(s, *s->toplevel_root);
+		s->roots[0] = cdr(s, s->roots[0]);
 	}
 }
