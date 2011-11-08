@@ -119,9 +119,7 @@ Expr cS = Expr0(S);
 Expr cI = Expr2(S2, &cK, &cK);
 Expr KI = Expr1(K1, &cI);
 
-Expr SI = Expr1(S1, &cI);
 Expr KS = Expr1(K1, &cS);
-Expr KK = Expr1(K1, &cK);
 Expr SKSK = Expr2(S2, &KS, &cK);
 
 Expr cInc = Expr0(Inc);
