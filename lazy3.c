@@ -266,13 +266,13 @@ Expr *unroot(state *s) {
 	return s->roots[s->root_stack_top];
 }
 
-void check_rooted(state *s, int n, Expr **e1, Expr **e2) {
+void check_rooted(state *s, int n, Expr *e1, Expr *e2) {
 	if (is_exhausted(s, n)) {
-		root(s, *e1);
-		root(s, *e2);
+		root(s, e1);
+		root(s, e2);
 		oom(s, n);
-		*e2 = unroot(s);
-		*e1 = unroot(s);
+		unroot(s);
+		unroot(s);
 	}
 }
 
@@ -318,7 +318,7 @@ Expr *partial_eval(state *s, Expr *node);
 // all references to it see the new version.
 // An additional root gets past in by reference so that we can root it
 // if we need to. I don't really like it but it is fast.
-Expr *partial_eval_primitive_application(state *s, Expr *e, Expr **prev) {
+Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 	INC_COUNTER(prim_apps);
 
 	e->arg2 = drop_i1(e->arg2); // do it in place to free up space
@@ -348,7 +348,7 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr **prev) {
 		break;
 	case LazyRead: // 6 allocs (4+2 from S2)
 	{
-		check_rooted(s, 6, &e, prev);
+		check_rooted(s, 6, e, prev);
 		Expr *lhs = e->arg1;
 		lhs->type = S2;
 		lhs->arg1 = newExpr2(s, S2, s->cI, newExpr1(s, K1, make_church_char(s, getchar())));
@@ -357,7 +357,7 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr **prev) {
 	}
 	case S2: // 2 allocs
 	{
-		check_rooted(s, 2, &e, prev);
+		check_rooted(s, 2, e, prev);
 		//type = A; // XXX: Why is this OK?
 		Expr *lhs = e->arg1;
 		Expr *rhs = e->arg2;
@@ -369,10 +369,10 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr **prev) {
 	{
 		// Inc is the one place we need to force evaluation of an rhs
 		root(s, e);
-		root(s, *prev);
+		root(s, prev);
 		Expr *rhs_res = partial_eval(s, rhs);
-		*prev = unroot(s);
-		e = unroot(s);
+		unroot(s);
+		unroot(s);
 
 		e->type = Num;
 		e->numeric_arg1 = to_number(rhs_res) + 1;
@@ -437,7 +437,7 @@ Expr *partial_eval(state *s, Expr *node) {
 		prev = cur->arg1;
 		cur->arg1 = next;
 
-		cur = partial_eval_primitive_application(s, cur, &prev);
+		cur = partial_eval_primitive_application(s, cur, prev);
 	}
 
 	return cur;
