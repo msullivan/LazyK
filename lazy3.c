@@ -39,7 +39,7 @@
 #define alloc_array(ty,size) calloc(sizeof(ty), size)
 int c(int ch) { putchar(ch); return 0; }
 int num(int num) { printf("%d", num); return 0; }
-
+int fail() { abort(); return 0; }
 
 // Really, we want to be able to have:
 // typedef enum Type { A = 1, K, K1, S, S1, S2, I1, LazyRead, Inc, Num, Free } Type;
@@ -245,8 +245,10 @@ bool is_exhausted(state *s, int n) {
 int oom(state *s, int n) {
 	gc(s);
 	if (is_exhausted(s, n)) {
-		fprintf(stderr, "out of memory!\n");
-		abort();
+		// "out of memory!\n"
+		c(111);c(117);c(116);c(32);c(111);c(102);c(32);c(109);
+		c(101);c(109);c(111);c(114);c(121);c(33);c(10);
+		fail();
 	}
 	return 0;
 }
@@ -317,6 +319,51 @@ Expr *drop_i1(Expr *cur) {
 
 Expr *partial_eval(state *s, Expr *node);
 
+int print_runtime_error() {
+	c(82);c(117);c(110);c(116);c(105);c(109);c(101);c(32);c(101);c(114);c(114);
+	c(111);c(114);c(58);c(32);
+	c(105);c(110);c(118);c(97);c(108);c(105);c(100);
+	c(32);c(111);c(117);c(116);c(112);c(117);c(116);c(32);c(102);c(111);c(114);
+	c(109);c(97);c(116);c(32);
+	return 0;
+}
+int err_inc_non_num() {
+	// "Runtime error: invalid output format (applied inc to a non-number)\n"
+	print_runtime_error();
+	c(40);c(97);c(112);c(112);c(108);c(105);c(101);
+	c(100);c(32);c(105);c(110);c(99);c(32);c(116);c(111);c(32);c(97);c(32);
+	c(110);c(111);c(110);c(45);c(110);c(117);c(109);c(98);c(101);c(114);c(41);c(10);
+	return fail();
+}
+int err_apply_num() {
+	//"Runtime error: invalid output format (attempted to apply a number)\n"
+	print_runtime_error();
+	c(40);c(97);c(116);c(116);c(101);c(109);c(112);
+	c(116);c(101);c(100);c(32);c(116);c(111);c(32);c(97);c(112);c(112);c(108);
+	c(121);c(32);c(97);c(32);c(110);c(117);c(109);c(98);c(101);c(114);c(41);c(10);
+	return fail();
+}
+int err_not_num() {
+	//"Runtime error: invalid output format (result was not a number)\n"
+	print_runtime_error();
+	c(40);c(114);c(101);c(115);c(117);c(108);c(116);c(32);c(119);c(97);
+	c(115);c(32);c(110);c(111);c(116);c(32);c(97);c(32);c(110);c(117);
+	c(109);c(98);c(101);c(114);c(41);c(10);
+	return fail();
+}
+int err_invalid_type(Type t) {
+	//"INTERNAL ERROR: invalid type in partial_eval_primitive_application (%d)\n"
+	c(73);c(78);c(84);c(69);c(82);c(78);c(65);c(76);c(32);c(69);c(82);c(82);c(79);
+	c(82);c(58);c(32);c(105);c(110);c(118);c(97);c(108);c(105);c(100);c(32);c(116);
+	c(121);c(112);c(101);c(32);c(105);c(110);c(32);c(112);c(97);c(114);c(116);c(105);
+	c(97);c(108);c(95);c(101);c(118);c(97);c(108);c(95);c(112);c(114);c(105);c(109);
+	c(105);c(116);c(105);c(118);c(101);c(95);c(97);c(112);c(112);c(108);c(105);c(99);
+	c(97);c(116);c(105);c(111);c(110);c(32);c(40);c(37);
+	num(t);
+	c(41);c(10);
+	return fail();
+}
+
 // This function modifies the object in-place so that
 // all references to it see the new version.
 // An additional root gets past in by reference so that we can root it
@@ -329,7 +376,7 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 	Expr *rhs = e->arg2;
 
 	// As an optimization, we sort the cases in order of frequency.
-	int t = lhs->type;
+	Type t = lhs->type;
 	if (t == 6/*S2*/) { // 2 allocs
 		check_rooted(s, 2, e, prev);
 		e->type = 1/*A*/; // XXX: Why is this OK?
@@ -364,9 +411,7 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 		e->type = 10/*Num*/;
 		e->numeric_arg1 = to_number(rhs_res) + 1;
 		if (e->numeric_arg1 == 0) {
-			fputs("Runtime error: invalid output format (attempted to apply inc to a non-number)\n",
-			      stderr);
-			abort();
+			err_inc_non_num();
 		}
 		e->arg2 = 0;
 	} else if (t == 8/*LazyRead*/) { // 6 allocs (4+2 from S2)
@@ -381,11 +426,10 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 		Expr *rhs = e->arg2;
 		e->arg1 = partial_apply(s, lhs->arg1, rhs);
 		e->arg2 = partial_apply(s, lhs->arg2, rhs);
+	} else if (t == 10/*Num*/) {
+		err_apply_num();
 	} else {
-		fprintf(stderr,
-		        "INTERNAL ERROR: invalid type in partial_eval_primitive_application (%d)\n",
-		        e->arg1->type);
-		abort();
+		err_invalid_type(t);
 	}
 
 	return e;
@@ -447,8 +491,10 @@ Expr *parse_expr(state *s) {
 	} else if (ch == 105/*'i'*/) {
 		return s->cI;
 	} else {
-		printf("Invalid character!\n");
-		abort();
+		//"Invalid character!\n"
+		c(73);c(110);c(118);c(97);c(108);c(105);c(100);c(32);c(99);c(104);
+		c(97);c(114);c(97);c(99);c(116);c(101);c(114);c(33);c(10);
+		fail();
 	}
 	return NULL;
 }
@@ -456,8 +502,12 @@ Expr *parse_expr(state *s) {
 Expr *parse_expr_top(state *s) {
 	Expr *e = parse_expr(s);
 	if (getchar() != 10/*'\n'*/) {
-		fprintf(stderr, "input program missing trailing newline\n");
-		exit(1);
+		//"input program missing trailing newline\n"
+		c(105);c(110);c(112);c(117);c(116);c(32);c(112);c(114);c(111);c(103);
+		c(114);c(97);c(109);c(32);c(109);c(105);c(115);c(115);c(105);c(110);
+		c(103);c(32);c(116);c(114);c(97);c(105);c(108);c(105);c(110);c(103);
+		c(32);c(110);c(101);c(119);c(108);c(105);c(110);c(101);c(10);
+		fail();
 	}
 	return e;
 }
@@ -476,11 +526,25 @@ int church2int(state *s, Expr *church) {
 	s->roots[1] = e;
 	int result = to_number(partial_eval(s, e));
 	if (result == -1) {
-		fputs("Runtime error: invalid output format (result was not a number)\n", stderr);
-		abort();
+		err_not_num();
 	}
 	s->roots[1] = NULL;
 	return result;
+}
+
+int debug_spew(state *s) {
+	//printf("     gcs: %d\n    news: %d\n", s->gcs, s->news);
+	//printf("primapps: %d\npartapps: %d\n", s->prim_apps, s->part_apps);
+	c(32);c(32);c(32);c(32);c(32);c(103);c(99);c(115);c(58);c(32);
+	num(s->gcs); c(10);
+	c(32);c(32);c(32);c(32);c(110);c(101);c(119);c(115);c(58);c(32);
+	num(s->news); c(10);
+	c(112);c(114);c(105);c(109);c(97);c(112);c(112);c(115);c(58);c(32);
+	num(s->prim_apps); c(10);
+	c(112);c(97);c(114);c(116);c(97);c(112);c(112);c(115);c(58);c(32);
+	num(s->part_apps); c(10);
+
+	return 0;
 }
 
 
@@ -494,10 +558,7 @@ int main(int argc, char** argv) {
 	for (;;) {
 		int ch = church2int(s, car(s, s->roots[0]));
 		if (ch >= 256) {
-#if DEBUG_COUNTERS
-			fprintf(stderr, "     gcs: %d\n    news: %d\n", s->gcs, s->news);
-			fprintf(stderr, "primapps: %d\npartapps: %d\n", s->prim_apps, s->part_apps);
-#endif
+			debug_spew(s);
 			return ch-256;
 		}
 		putchar(ch);
