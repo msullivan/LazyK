@@ -122,8 +122,6 @@ Expr SI = Expr1(S1, &cI);
 Expr KS = Expr1(K1, &cS);
 Expr KK = Expr1(K1, &cK);
 Expr SKSK = Expr2(S2, &KS, &cK);
-Expr SIKS = Expr2(S2, &cI, &KS);
-Expr Iota = Expr2(S2, &SIKS, &KK);
 
 Expr cInc = Expr0(Inc);
 Expr cZero = Expr0(Num);
@@ -447,8 +445,6 @@ Expr *parse_expr_top(FILE* f) {
 	}
 	return e;
 }
-
-
 
 static Expr *car(Expr *list) {
 	return partial_apply(list, &cK);
