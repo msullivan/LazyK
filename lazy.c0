@@ -44,7 +44,7 @@ int do_read() {
 
 // Really, we want to be able to have:
 // typedef enum Type { Free = 0, A = 1, K, K1, S, S1, S2, I1, LazyRead,
-//                     Inc, Num } Type;
+//                     Inc, Num, I } Type;
 // But we don't get that in C0. If we ran the C preprocessor, that would
 // also be much nicer. Instead we write things like S2/*6*/. Sigh.
 // N.B.: The type tags start at 1 so that we can negate the tags to
@@ -163,7 +163,7 @@ int setup_state(state *s) {
 	// Set up constants
 	s->cK = newExpr(s, 2/*K*/);
 	s->cS = newExpr(s, 4/*S*/);
-	s->cI = newExpr2(s, 6/*S2*/, s->cK, s->cK);
+	s->cI = newExpr(s, 11/*I*/);
 	s->KI = newExpr1(s, 3/*K1*/, s->cI);
 
 	s->KS = newExpr1(s, 3/*K1*/, s->cS);
@@ -396,6 +396,12 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 		e->type = 7/*I1*/;
 		e->arg1 = lhs->arg1;
 		e->arg2 = NULL;
+		e = lhs->arg1;
+	} else if (t == 11/*I*/) { // 0 allocs
+		e->type = 7/*I1*/;
+		e->arg1 = rhs;
+		e->arg2 = NULL;
+		e = rhs;
 	} else if (t == 2/*K*/) { // 0 allocs
 		e->type = 3/*K1*/;
 		e->arg1 = rhs;
