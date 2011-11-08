@@ -1,4 +1,4 @@
-// Lazy K interpreter in C++.
+// Lazy K interpreter in C0.
 // For usage see usage() function below.
 // Copyright 2002 Ben Rudiak-Gould. Distributed under the GPL.
 // Copyright 2011 Michael Sullivan.
@@ -41,8 +41,6 @@
 #include <stdbool.h>
 #include <ctype.h>
 
-#define MB (1024*1024)
-#define HEAP_SIZE (64*MB)
 #if DEBUG_COUNTERS
 #define INC_COUNTER(n) ((s->n)++)
 #else
@@ -63,10 +61,13 @@ typedef enum Type { A, K, K1, S, S1, S2, I1, LazyRead, Inc, Num, Free } Type;
 struct Expr {
 	ExprP forward;
 	ExprP arg1;
-	int numeric_arg1; // XXX
 	ExprP arg2;
+	int numeric_arg1; // XXX
 	Type type;
 };
+#define MB (1024*1024)
+#define HEAP_SIZE_BYTES (64*MB)
+#define HEAP_SIZE (HEAP_SIZE_BYTES/sizeof(struct Expr))
 
 typedef struct state_t {
 	// Perf counters
@@ -76,8 +77,8 @@ typedef struct state_t {
 	int part_apps;
 
 	// Garbage collection
-	char space1[HEAP_SIZE];
-	char space2[HEAP_SIZE];
+	Expr space1[HEAP_SIZE];
+	Expr space2[HEAP_SIZE];
 	ExprP from_space_start;
 	ExprP from_space_end;
 	ExprP to_space_start;
@@ -121,7 +122,9 @@ ExprP alloc_expr(state *s) {
 	//if (next_alloc >= from_space_end) {
 	//	oom(1);
 	//}
-	return s->next_alloc++;
+	ExprP expr = s->next_alloc;
+	s->next_alloc++;
+	return expr;
 }
 
 ExprP newExpr2(state *s, Type t, ExprP a1, ExprP a2) {
@@ -184,7 +187,8 @@ bool in_arena(state *s, ExprP p) {
 }
 
 void push_work(state *s, ExprP e) {
-	*(--s->work_stack_top) = e;
+	--s->work_stack_top;
+	*s->work_stack_top = e;
 }
 ExprP pop_work(state *s) {
 	return *s->work_stack_top++;
