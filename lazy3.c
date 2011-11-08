@@ -85,9 +85,7 @@ typedef struct state_t {
 	Expr *cI;
 	Expr *KI;
 
-	Expr *SI;
 	Expr *KS;
-	Expr *KK;
 	Expr *SKSK;
 
 	Expr *cInc;
@@ -165,13 +163,15 @@ int setup_state(state *s) {
 	s->cI = newExpr2(s, 6/*S2*/, s->cK, s->cK);
 	s->KI = newExpr1(s, 3/*K1*/, s->cI);
 
-	s->SI = newExpr1(s, 5/*S1*/, s->cI);
 	s->KS = newExpr1(s, 3/*K1*/, s->cS);
-	s->KK = newExpr1(s, 3/*K1*/, s->cK);
 	s->SKSK = newExpr2(s, 6/*S2*/, s->KS, s->cK);
 
 	s->cInc = newExpr(s, 9/*Inc*/);
 	s->cZero = newExpr(s, 10/*Num*/);
+
+	// We need to root the constants or they might get GCd. Argh.
+	root(s, s->cK); root(s, s->cS); root(s, s->cI); root(s, s->KI);
+	root(s, s->KS); root(s, s->SKSK); root(s, s->cInc); root(s, s->cZero);
 
 	// Preintialize the chuch numeral table
 	s->cached_church_chars = alloc_array(Expr *, 257);
