@@ -517,10 +517,12 @@ Expr *parse_expr_top(state *s) {
 }
 
 Expr *car(state *s, Expr *list) {
+	check(s, 1);
 	return partial_apply(s, list, s->cK);
 }
 
 Expr *cdr(state *s, Expr *list) {
+	check(s, 1);
 	return partial_apply(s, list, s->KI);
 }
 
@@ -566,7 +568,7 @@ int main(int argc, char** argv) {
 			return ch-256;
 		}
 		putchar(ch);
-		fflush(stdout);
+
 		s->roots[0] = cdr(s, s->roots[0]);
 	}
 }

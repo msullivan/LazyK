@@ -599,10 +599,12 @@ Expr* parse_manual_close(Stream* f, int expected_terminator) {
 
 
 static Expr* car(Expr* list) {
+	check(1);
 	return partial_apply(list, &cK);
 }
 
 static Expr* cdr(Expr* list) {
+	check(1);
 	return partial_apply(list, &KI);
 }
 

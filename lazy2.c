@@ -31,7 +31,7 @@
 //    stream.
 //
 
-#define DEBUG_COUNTERS 0
+#define DEBUG_COUNTERS 1
 
 #include <assert.h>
 #include <stdio.h>
@@ -213,7 +213,7 @@ static void oom(int n) {
 	gc();
 	if (is_exhausted(n)) {
 		fprintf(stderr, "out of memory!\n");
-		exit(4);
+		abort();
 	}
 }
 
@@ -339,21 +339,21 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr **prev) {
 		e->type = Num;
 		e->numeric_arg1 = to_number(rhs_res) + 1;
 		if (e->numeric_arg1 == 0) {
-			fputs("Runtime error: invalid output format (attempted to apply inc to a non-number)\n", stderr);
-			exit(3);
+			fputs("Runtime error: invalid output format (attempted to apply inc to a non-number)\n",
+			      stderr);
+			abort();
 		}
 		e->arg2 = 0;
 		break;
 	}
 	case Num:
 		fputs("Runtime error: invalid output format (attempted to apply a number)\n", stderr);
-		exit(3);
+		abort();
 	default:
 		fprintf(stderr,
 		        "INTERNAL ERROR: invalid type in partial_eval_primitive_application (%d)\n",
 		        e->arg1->type);
 		abort();
-		exit(4);
 	}
 
 	return e;
@@ -433,7 +433,7 @@ Expr *parse_expr(FILE* f) {
 		return &cI;
 	default:
 		printf("Invalid character!\n");
-		exit(1);
+		abort();
 	}
 	return 0;
 }
@@ -442,16 +442,18 @@ Expr *parse_expr_top(FILE* f) {
 	Expr *e = parse_expr(f);
 	if (fgetc(f) != '\n') {
 		fprintf(stderr, "input program missing trailing newline\n");
-		exit(1);
+		abort();
 	}
 	return e;
 }
 
 static Expr *car(Expr *list) {
+	check(1);
 	return partial_apply(list, &cK);
 }
 
 static Expr *cdr(Expr *list) {
+	check(1);
 	return partial_apply(list, &KI);
 }
 
@@ -462,7 +464,7 @@ static int church2int(Expr *church) {
 	int result = to_number(partial_eval(e));
 	if (result == -1) {
 		fputs("Runtime error: invalid output format (result was not a number)\n", stderr);
-		exit(3);
+		abort();
 	}
 	*church2int_root = 0;
 	return result;
@@ -480,7 +482,7 @@ int main(int argc, char** argv) {
 		f = fopen(argv[1], "r");
 		if (!f) {
 			fprintf(stderr, "Unable to open the file \"%s\".\n", argv[1]);
-			exit(1);
+			return 1;
 		}
 	}
 	Expr *e = parse_expr_top(f);
