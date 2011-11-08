@@ -386,7 +386,7 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 	Type t = lhs->type;
 	if (t == 6/*S2*/) { // 2 allocs
 		check_rooted(s, 2, e, prev);
-		e->type = 1/*A*/; // XXX: Why is this OK?
+		//e->type = 1/*A*/; // the type is already A
 		Expr *lhs = e->arg1;
 		Expr *rhs = e->arg2;
 		e->arg1 = partial_apply(s, lhs->arg1, rhs);
@@ -430,7 +430,7 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 		lhs->arg2 = newExpr1(s, 3/*K1*/, newExpr(s, 8/*LazyRead*/));
 
 		// duplicate the S2 code
-		e->type = 1/*A*/;
+		//e->type = 1/*A*/; // the type is already A
 		Expr *rhs = e->arg2;
 		e->arg1 = partial_apply(s, lhs->arg1, rhs);
 		e->arg2 = partial_apply(s, lhs->arg2, rhs);
