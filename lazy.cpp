@@ -67,7 +67,7 @@ static Expr *next_alloc = from_space_start;
 static Expr **work_stack_top = (Expr **)from_space_end;
 
 
-enum Type { A, K, K1, S, S1, S2, I1, LazyRead, Inc, Num, Free };
+enum Type { A, K, K1, S, S1, S2, I, I1, LazyRead, Inc, Num, Free };
 
 struct Expr {
 	Expr *forward;
@@ -164,7 +164,7 @@ void Expr::print(Expr* highlight) {
 
 Expr cK(K);
 Expr cS(S);
-Expr cI(S2, &cK, &cK);
+Expr cI(I);
 Expr KI(K1, &cI);
 
 Expr SI(S1, &cI);
@@ -332,6 +332,12 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr *&prev) {
 	Expr *lhs = e->arg1, *rhs = e->arg2;
 
 	switch (lhs->type) {
+	case I: // 0 allocs
+		e->type = I1;
+		e->arg1 = rhs;
+		e->arg2 = 0;
+		e = rhs;
+		break;
 	case K: // 0 allocs
 		e->type = K1;
 		e->arg1 = rhs;
