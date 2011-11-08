@@ -427,11 +427,11 @@ Expr *parse_expr(FILE* f) {
 		return partial_apply(p, q);
 	}
 	case 'k': case 'K':
-		return &cK; // XXX
+		return &cK;
 	case 's': case 'S':
-		return &cS; // XXX
+		return &cS;
 	case 'i': case 'I':
-		return &cI; // XXX
+		return &cI;
 	default:
 		printf("Invalid character!\n");
 		exit(1);
