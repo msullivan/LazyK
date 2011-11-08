@@ -31,32 +31,22 @@
 //    stream.
 //
 
-#define DEBUG_COUNTERS 0
-
-#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 
-#if DEBUG_COUNTERS
-#define INC_COUNTER(n) ((s->n)++)
-#else
-#define INC_COUNTER(n)
-#endif
-
 #define alloc(ty) calloc(sizeof(ty), 1)
 #define alloc_array(ty,size) calloc(sizeof(ty), size)
+int c(int ch) { putchar(ch); return 0; }
+int num(int num) { printf("%d", num); return 0; }
 
-#define A 1/*A*/
-#define K 2/*K*/
-#define K1 3/*K1*/
-#define S 4/*S*/
-#define S1 5/*S1*/
-#define S2 6/*S2*/
-#define I1 7/*I1*/
-#define LazyRead 8/*LazyRead*/
-#define Inc 9/*Inc*/
-#define Num 10/*Num*/
+
+// Really, we want to be able to have:
+// typedef enum Type { A = 1, K, K1, S, S1, S2, I1, LazyRead, Inc, Num, Free } Type;
+// But we don't get that in C0. If we ran the C preprocessor, that would
+// also be much nicer. Instead we write things like S2/*6/. Sigh.
+// N.B.: The type tags start at 1 so that we can negate the tags to mark them in the gc.
+
 typedef int Type;
 
 typedef struct Expr Expr;
@@ -103,7 +93,7 @@ typedef struct state_t {
 } state;
 
 Expr *alloc_expr(state *s) {
-	INC_COUNTER(news);
+	s->news++;
 	// We don't do an oom check. The caller better have already
 	// done it with check or check_rooted.
 	//if (free_slots == 0) {
@@ -129,7 +119,7 @@ Expr *newExpr(state *s, Type t) { return newExpr2(s, t, NULL, NULL); }
 
 
 int to_number(Expr *e) {
-	int result = (e->type == Num) ? e->numeric_arg1 : -1;
+	int result = (e->type == 10/*Num*/) ? e->numeric_arg1 : -1;
 	return result;
 }
 
@@ -165,22 +155,22 @@ int setup_state(state *s) {
 	s->root_stack_top = 2; // 1 for toplevel, 1 for church2int
 
 	// Set up constants
-	s->cK = newExpr(s, K);
-	s->cS = newExpr(s, S);
-	s->cI = newExpr2(s, S2, s->cK, s->cK);
-	s->KI = newExpr1(s, K1, s->cI);
+	s->cK = newExpr(s, 2/*K*/);
+	s->cS = newExpr(s, 4/*S*/);
+	s->cI = newExpr2(s, 6/*S2*/, s->cK, s->cK);
+	s->KI = newExpr1(s, 3/*K1*/, s->cI);
 
-	s->SI = newExpr1(s, S1, s->cI);
-	s->KS = newExpr1(s, K1, s->cS);
-	s->KK = newExpr1(s, K1, s->cK);
-	s->SKSK = newExpr2(s, S2, s->KS, s->cK);
+	s->SI = newExpr1(s, 5/*S1*/, s->cI);
+	s->KS = newExpr1(s, 3/*K1*/, s->cS);
+	s->KK = newExpr1(s, 3/*K1*/, s->cK);
+	s->SKSK = newExpr2(s, 6/*S2*/, s->KS, s->cK);
 
-	s->cInc = newExpr(s, Inc);
-	s->cZero = newExpr(s, Num);
+	s->cInc = newExpr(s, 9/*Inc*/);
+	s->cZero = newExpr(s, 10/*Num*/);
 
 	// Preintialize the chuch numeral table
 	s->cached_church_chars = alloc_array(Expr *, 257);
-	for (unsigned i = 0; i <= 256; i++) {
+	for (int i = 0; i <= 256; i++) {
 		make_church_char(s, i);
 	}
 
@@ -208,11 +198,10 @@ int mark(state *s, Expr *e) {
 
 // Do a simple mark/sweep garbage collection over our heap 
 int gc(state *s) {
-	INC_COUNTER(gcs);
+	s->gcs++;
 	// Set up next_alloc to point into the to-space
 	s->next_alloc = NULL;
 	s->free_slots = 0;
-	assert(s->work_stack_top == NULL);
 
 	// Process the roots
 	for (int i = 0; i < s->root_stack_top; i++) {
@@ -226,7 +215,7 @@ int gc(state *s) {
 	while (s->work_stack_top != NULL) {
 		Expr *expr = pop_work(s);
 
-		if (expr->type != Num) {
+		if (expr->type != 10/*Num*/) {
 			mark(s, expr->arg1);
 			mark(s, expr->arg2);
 		}
@@ -245,7 +234,7 @@ int gc(state *s) {
 		}
 	}
 
-	printf("gc done: reclaimed %d/%d\n", s->free_slots, HEAP_SIZE);
+	//printf("gc done: reclaimed %d/%d\n", s->free_slots, HEAP_SIZE);
 	return 0;
 }
 
@@ -294,7 +283,7 @@ Expr *partial_apply(state *s, Expr *lhs, Expr *rhs) { // 1 alloc
 	// You could do something more complicated here,
 	// but I tried it and it didn't seem to improve
 	// execution speed.
-	return newExpr2(s, A, lhs, rhs);
+	return newExpr2(s, 1/*A*/, lhs, rhs);
 }
 
 
@@ -309,7 +298,7 @@ Expr *make_church_char(state *s, int ch) {
 		} else if (ch == 1) {
 			s->cached_church_chars[ch] = s->cI;
 		} else {		
-			s->cached_church_chars[ch] = newExpr2(s, S2, s->SKSK, make_church_char(s, ch-1));
+			s->cached_church_chars[ch] = newExpr2(s, 6/*S2*/, s->SKSK, make_church_char(s, ch-1));
 		}
 	}
 	return s->cached_church_chars[ch];
@@ -318,56 +307,53 @@ Expr *make_church_char(state *s, int ch) {
 Expr *drop_i1(Expr *cur) {
 	// Seperating out this into two checks gets a real speed win.
 	// Presumably due to branch prediction.
-	if (cur->type == I1) {
+	if (cur->type == 7/*I1*/) {
 		do {
 			cur = cur->arg1;
-		} while (cur->type == I1);
+		} while (cur->type == 7/*I1*/);
 	}
 	return cur;
 }
 
 Expr *partial_eval(state *s, Expr *node);
 
-long int counts[15];
 // This function modifies the object in-place so that
 // all references to it see the new version.
 // An additional root gets past in by reference so that we can root it
 // if we need to. I don't really like it but it is fast.
 Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
-	INC_COUNTER(prim_apps);
+	s->prim_apps++;
 
 	e->arg2 = drop_i1(e->arg2); // do it in place to free up space
 	Expr *lhs = e->arg1;
 	Expr *rhs = e->arg2;
 
-	counts[lhs->type]++;
-
 	// As an optimization, we sort the cases in order of frequency.
 	int t = lhs->type;
-	if (t == S2) { // 2 allocs
+	if (t == 6/*S2*/) { // 2 allocs
 		check_rooted(s, 2, e, prev);
-		//type = A; // XXX: Why is this OK?
+		e->type = 1/*A*/; // XXX: Why is this OK?
 		Expr *lhs = e->arg1;
 		Expr *rhs = e->arg2;
 		e->arg1 = partial_apply(s, lhs->arg1, rhs);
 		e->arg2 = partial_apply(s, lhs->arg2, rhs);
-	} else if (t == K1) { // 0 allocs
-		e->type = I1;
+	} else if (t == 3/*K1*/) { // 0 allocs
+		e->type = 7/*I1*/;
 		e->arg1 = lhs->arg1;
 		e->arg2 = 0;
-	} else if (t == K) { // 0 allocs
-		e->type = K1;
+	} else if (t == 2/*K*/) { // 0 allocs
+		e->type = 3/*K1*/;
 		e->arg1 = rhs;
 		e->arg2 = 0;
-	} else if (t == S1) { // 0 allocs
-		e->type = S2;
+	} else if (t == 5/*S1*/) { // 0 allocs
+		e->type = 6/*S2*/;
 		e->arg1 = lhs->arg1;
 		e->arg2 = rhs;
-	} else if (t == S) { // 0 allocs
-		e->type = S1;
+	} else if (t == 4/*S*/) { // 0 allocs
+		e->type = 5/*S1*/;
 		e->arg1 = rhs;
 		e->arg2 = 0;
-	} else if (t == Inc) { // 0 allocs - but recursion
+	} else if (t == 9/*Inc*/) { // 0 allocs - but recursion
 		// Inc is the one place we need to force evaluation of an rhs
 		root(s, e);
 		root(s, prev);
@@ -375,7 +361,7 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 		unroot(s);
 		unroot(s);
 
-		e->type = Num;
+		e->type = 10/*Num*/;
 		e->numeric_arg1 = to_number(rhs_res) + 1;
 		if (e->numeric_arg1 == 0) {
 			fputs("Runtime error: invalid output format (attempted to apply inc to a non-number)\n",
@@ -383,23 +369,18 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 			abort();
 		}
 		e->arg2 = 0;
-	} else if (t == LazyRead) { // 6 allocs (4+2 from S2)
+	} else if (t == 8/*LazyRead*/) { // 6 allocs (4+2 from S2)
 		check_rooted(s, 6, e, prev);
 		Expr *lhs = e->arg1;
-		lhs->type = S2;
-		lhs->arg1 = newExpr2(s, S2, s->cI, newExpr1(s, K1, make_church_char(s, getchar())));
-		lhs->arg2 = newExpr1(s, K1, newExpr(s, LazyRead));
+		lhs->type = 6/*S2*/;
+		lhs->arg1 = newExpr2(s, 6/*S2*/, s->cI, newExpr1(s, 3/*K1*/, make_church_char(s, getchar())));
+		lhs->arg2 = newExpr1(s, 3/*K1*/, newExpr(s, 8/*LazyRead*/));
 
 		// duplicate the S2 code
-		check_rooted(s, 2, e, prev);
-		//type = A; // XXX: Why is this OK?
-		lhs = e->arg1;
+		e->type = 1/*A*/;
 		Expr *rhs = e->arg2;
 		e->arg1 = partial_apply(s, lhs->arg1, rhs);
 		e->arg2 = partial_apply(s, lhs->arg2, rhs);
-	} else if (t == Num) {
-		fputs("Runtime error: invalid output format (attempted to apply a number)\n", stderr);
-		abort();
 	} else {
 		fprintf(stderr,
 		        "INTERNAL ERROR: invalid type in partial_eval_primitive_application (%d)\n",
@@ -414,7 +395,7 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 // a stack of nodes that are waiting for their first argument to be evaluated is built,
 // chained through the first argument field
 Expr *partial_eval(state *s, Expr *node) {
-	INC_COUNTER(part_apps);
+	s->part_apps++;
 
 	Expr *prev = 0;
 	Expr *cur = node;
@@ -424,7 +405,7 @@ Expr *partial_eval(state *s, Expr *node) {
 		// where we came from linked through arg1) until we find
 		// something that isn't an application. Once we have that,
 		// we can apply the primitive, and then repeat.
-		while (cur->type == A) {
+		while (cur->type == 1/*A*/) {
 			Expr *next = drop_i1(cur->arg1);
 			cur->arg1 = prev;
 			prev = cur; cur = next;
@@ -508,7 +489,7 @@ int main(int argc, char** argv) {
 	setup_state(s);
 	
 	Expr *e = parse_expr_top(s);
-	s->roots[0] = partial_apply(s, e, newExpr(s, LazyRead));
+	s->roots[0] = partial_apply(s, e, newExpr(s, 8/*LazyRead*/));
 
 	for (;;) {
 		int ch = church2int(s, car(s, s->roots[0]));
@@ -517,9 +498,6 @@ int main(int argc, char** argv) {
 			fprintf(stderr, "     gcs: %d\n    news: %d\n", s->gcs, s->news);
 			fprintf(stderr, "primapps: %d\npartapps: %d\n", s->prim_apps, s->part_apps);
 #endif
-			for (int i = A; i <= Num; i++) {
-				printf("%2d: %ld\n", i, counts[i]);
-			}
 			return ch-256;
 		}
 		putchar(ch);
