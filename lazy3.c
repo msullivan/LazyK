@@ -59,9 +59,9 @@ void oom(struct state_t *s, int n);
 typedef enum Type { A, K, K1, S, S1, S2, I1, LazyRead, Inc, Num, Free } Type;
 
 struct Expr {
-	ExprP forward;
-	ExprP arg1;
-	ExprP arg2;
+	Expr *forward;
+	Expr *arg1;
+	Expr *arg2;
 	int numeric_arg1; // XXX
 	Type type;
 };
@@ -79,72 +79,72 @@ typedef struct state_t {
 	// Garbage collection
 	Expr space1[HEAP_SIZE];
 	Expr space2[HEAP_SIZE];
-	ExprP from_space_start;
-	ExprP from_space_end;
-	ExprP to_space_start;
-	ExprP to_space_end;
-	ExprP next_alloc;
-	ExprP *work_stack_top;
+	Expr *from_space_start;
+	Expr *from_space_end;
+	Expr *to_space_start;
+	Expr *to_space_end;
+	Expr *next_alloc;
+	Expr **work_stack_top;
 
 	// Roots
 	// we need 2 roots for toplevel and church2int,
 	// and then 2 per simultaneous invocation of partial_eval.
 	// partial_eval only recurses as deep as the biggest number printed,
 	// which can't /reasonably/ be above 512. This should be more than enough.
-	ExprP roots[MAX_ROOTS];
-	ExprP *toplevel_root;
-	ExprP *church2int_root;
+	Expr *roots[MAX_ROOTS];
+	Expr **toplevel_root;
+	Expr **church2int_root;
 	int root_stack_top;
-	ExprP cached_church_chars[257];
+	Expr *cached_church_chars[257];
 
 	// Preconstructed terms
 	Expr constants[10];
 	
-	ExprP cK;
-	ExprP cS;
-	ExprP cI;
-	ExprP KI;
+	Expr *cK;
+	Expr *cS;
+	Expr *cI;
+	Expr *KI;
 
-	ExprP SI;
-	ExprP KS;
-	ExprP KK;
-	ExprP SKSK;
+	Expr *SI;
+	Expr *KS;
+	Expr *KK;
+	Expr *SKSK;
 
-	ExprP cInc;
-	ExprP cZero;
+	Expr *cInc;
+	Expr *cZero;
 } state;
 struct state_t main_state;
 
-ExprP alloc_expr(state *s) {
+Expr *alloc_expr(state *s) {
 	INC_COUNTER(news);
 	// We don't do an oom check. The caller better have already
 	// done it with check or check_rooted.
 	//if (next_alloc >= from_space_end) {
 	//	oom(1);
 	//}
-	ExprP expr = s->next_alloc;
+	Expr *expr = s->next_alloc;
 	s->next_alloc++;
 	return expr;
 }
 
-ExprP newExpr2(state *s, Type t, ExprP a1, ExprP a2) {
-	ExprP e = alloc_expr(s);
+Expr *newExpr2(state *s, Type t, Expr *a1, Expr *a2) {
+	Expr *e = alloc_expr(s);
 	e->forward = 0;
 	e->type = t;
 	e->arg1 = a1; e->arg2 = a2;
 	e->numeric_arg1 = 0;
 	return e;
 }
-ExprP newExpr1(state *s, Type t, ExprP a1) { return newExpr2(s, t, a1, NULL); }
-ExprP newExpr(state *s, Type t) { return newExpr2(s, t, NULL, NULL); }
+Expr *newExpr1(state *s, Type t, Expr *a1) { return newExpr2(s, t, a1, NULL); }
+Expr *newExpr(state *s, Type t) { return newExpr2(s, t, NULL, NULL); }
 
 
-int to_number(ExprP e) {
+int to_number(Expr *e) {
 	int result = (e->type == Num) ? e->numeric_arg1 : -1;
 	return result;
 }
 
-ExprP make_church_char(state *s, int ch);
+Expr *make_church_char(state *s, int ch);
 
 void setup_state(state *s) {
 	// Set next_alloc to be the start of the constants region so we
@@ -182,19 +182,19 @@ void setup_state(state *s) {
 }
 
 
-bool in_arena(state *s, ExprP p) {
+bool in_arena(state *s, Expr *p) {
 	return p >= s->from_space_start && p < s->from_space_end;
 }
 
-void push_work(state *s, ExprP e) {
+void push_work(state *s, Expr *e) {
 	--s->work_stack_top;
 	*s->work_stack_top = e;
 }
-ExprP pop_work(state *s) {
+Expr *pop_work(state *s) {
 	return *s->work_stack_top++;
 }
 
-ExprP copy_object(state *s, ExprP obj) {
+Expr *copy_object(state *s, Expr *obj) {
 	//assert(obj != (Expr*)(-2));
 	if (!in_arena(s, obj)) return obj;
 	if (obj->forward) {
@@ -216,7 +216,7 @@ void gc(state *s) {
 	INC_COUNTER(gcs);
 	// Set up next_alloc to point into the to-space
 	s->next_alloc = s->to_space_start;
-	s->work_stack_top = (ExprP *)s->to_space_end;
+	s->work_stack_top = (Expr **)s->to_space_end;
 
 	// Process the roots
 	for (int i = 0; i < s->root_stack_top; i++) {
@@ -228,7 +228,7 @@ void gc(state *s) {
 
 	while ((ExprP)s->work_stack_top != s->to_space_end) {
 		//assert((ExprP)work_stack_top > next_alloc);
-		ExprP cursor = pop_work(s);
+		Expr *cursor = pop_work(s);
 
 		if (cursor->type != Num) {
 			cursor->arg1 = copy_object(s, cursor->arg1);
@@ -237,7 +237,7 @@ void gc(state *s) {
 	}
 
 	// Do the swap
-	ExprP tmp = s->from_space_start;
+	Expr *tmp = s->from_space_start;
 	s->from_space_start = s->to_space_start;
 	s->to_space_start = tmp;
 	tmp = s->from_space_end;
@@ -263,14 +263,14 @@ void check(state *s, int n) {
 	}
 }
 
-void root(state *s, ExprP e) {
+void root(state *s, Expr *e) {
 	s->roots[s->root_stack_top++] = e;
 }
-ExprP unroot(state *s) {
+Expr *unroot(state *s) {
 	return s->roots[--s->root_stack_top];
 }
 
-void check_rooted(state *s, int n, ExprP *e1, ExprP *e2) {
+void check_rooted(state *s, int n, Expr **e1, Expr **e2) {
 	if (is_exhausted(s, n)) {
 		root(s, *e1);
 		root(s, *e2);
@@ -280,7 +280,7 @@ void check_rooted(state *s, int n, ExprP *e1, ExprP *e2) {
 	}
 }
 
-ExprP partial_apply(state *s, ExprP lhs, ExprP rhs) { // 1 alloc
+Expr *partial_apply(state *s, Expr *lhs, Expr *rhs) { // 1 alloc
 	// You could do something more complicated here,
 	// but I tried it and it didn't seem to improve
 	// execution speed.
@@ -288,7 +288,7 @@ ExprP partial_apply(state *s, ExprP lhs, ExprP rhs) { // 1 alloc
 }
 
 
-ExprP make_church_char(state *s, int ch) {
+Expr *make_church_char(state *s, int ch) {
 	if (ch < 0 || ch > 256) {
 		ch = 256;
 	}
@@ -305,7 +305,7 @@ ExprP make_church_char(state *s, int ch) {
 	return s->cached_church_chars[ch];
 }
 
-ExprP drop_i1(ExprP cur) {
+Expr *drop_i1(Expr *cur) {
 	// Seperating out this into two checks gets a real speed win.
 	// Presumably due to branch prediction.
 	if (cur->type == I1) {
@@ -316,17 +316,18 @@ ExprP drop_i1(ExprP cur) {
 	return cur;
 }
 
-ExprP partial_eval(state *s, ExprP node);
+Expr *partial_eval(state *s, Expr *node);
 
 // This function modifies the object in-place so that
 // all references to it see the new version.
 // An additional root gets past in by reference so that we can root it
 // if we need to. I don't really like it but it is fast.
-ExprP partial_eval_primitive_application(state *s, ExprP e, ExprP *prev) {
+Expr *partial_eval_primitive_application(state *s, Expr *e, Expr **prev) {
 	INC_COUNTER(prim_apps);
 
 	e->arg2 = drop_i1(e->arg2); // do it in place to free up space
-	ExprP lhs = e->arg1, rhs = e->arg2;
+	Expr *lhs = e->arg1;
+	Expr *rhs = e->arg2;
 
 	switch (lhs->type) {
 	case K: // 0 allocs
@@ -352,7 +353,7 @@ ExprP partial_eval_primitive_application(state *s, ExprP e, ExprP *prev) {
 	case LazyRead: // 6 allocs (4+2 from S2)
 	{
 		check_rooted(s, 6, &e, prev);
-		ExprP lhs = e->arg1;
+		Expr *lhs = e->arg1;
 		lhs->type = S2;
 		lhs->arg1 = newExpr2(s, S2, s->cI, newExpr1(s, K1, make_church_char(s, getchar())));
 		lhs->arg2 = newExpr1(s, K1, newExpr(s, LazyRead));
@@ -362,7 +363,8 @@ ExprP partial_eval_primitive_application(state *s, ExprP e, ExprP *prev) {
 	{
 		check_rooted(s, 2, &e, prev);
 		//type = A; // XXX: Why is this OK?
-		ExprP lhs = e->arg1, rhs = e->arg2;
+		Expr *lhs = e->arg1;
+		Expr *rhs = e->arg2;
 		e->arg1 = partial_apply(s, lhs->arg1, rhs);
 		e->arg2 = partial_apply(s, lhs->arg2, rhs);
 		break;
@@ -372,7 +374,7 @@ ExprP partial_eval_primitive_application(state *s, ExprP e, ExprP *prev) {
 		// Inc is the one place we need to force evaluation of an rhs
 		root(s, e);
 		root(s, *prev);
-		ExprP rhs_res = partial_eval(s, rhs);
+		Expr *rhs_res = partial_eval(s, rhs);
 		*prev = unroot(s);
 		e = unroot(s);
 
@@ -400,8 +402,8 @@ ExprP partial_eval_primitive_application(state *s, ExprP e, ExprP *prev) {
 }
 
 /*
-ExprP Expr::partial_eval() {
-	ExprP cur = this;
+Expr *Expr::partial_eval() {
+	Expr *cur = this;
 	for (;;) {
 		cur = cur->drop_i1();
 		if (cur->type != A) {
@@ -416,11 +418,11 @@ ExprP Expr::partial_eval() {
 // evaluates until the toplevel thing is not a function application.
 // a stack of nodes that are waiting for their first argument to be evaluated is built,
 // chained through the first argument field
-ExprP partial_eval(state *s, ExprP node) {
+Expr *partial_eval(state *s, Expr *node) {
 	INC_COUNTER(part_apps);
 
-	ExprP prev = 0;
-	ExprP cur = node;
+	Expr *prev = 0;
+	Expr *cur = node;
 	for (;;) {
 		cur = drop_i1(cur);
 		// Chase down the left hand side (while building a list of
@@ -428,14 +430,14 @@ ExprP partial_eval(state *s, ExprP node) {
 		// something that isn't an application. Once we have that,
 		// we can apply the primitive, and then repeat.
 		while (cur->type == A) {
-			ExprP next = drop_i1(cur->arg1);
+			Expr *next = drop_i1(cur->arg1);
 			cur->arg1 = prev;
 			prev = cur; cur = next;
 		}
 		if (!prev) { // we've gotten it down to something that isn't an application
 			break;
 		}
-		ExprP next = cur; cur = prev;
+		Expr *next = cur; cur = prev;
 		prev = cur->arg1;
 		cur->arg1 = next;
 
@@ -446,7 +448,7 @@ ExprP partial_eval(state *s, ExprP node) {
 }
 
 
-ExprP parse_expr(state *s, FILE* f) {
+Expr *parse_expr(state *s, FILE* f) {
 	int ch;
 
 	// Wait until we get something we care about
@@ -461,8 +463,8 @@ ExprP parse_expr(state *s, FILE* f) {
 	switch (ch) {
 	case '`':
 	{
-		ExprP p = parse_expr(s, f);
-		ExprP q = parse_expr(s, f);
+		Expr *p = parse_expr(s, f);
+		Expr *q = parse_expr(s, f);
 		return partial_apply(s, p, q);
 	}
 	case 'k': case 'K':
@@ -478,8 +480,8 @@ ExprP parse_expr(state *s, FILE* f) {
 	return 0;
 }
 
-ExprP parse_expr_top(state *s, FILE* f) {
-	ExprP e = parse_expr(s, f);
+Expr *parse_expr_top(state *s, FILE* f) {
+	Expr *e = parse_expr(s, f);
 	if (fgetc(f) != '\n') {
 		fprintf(stderr, "input program missing trailing newline\n");
 		exit(1);
@@ -487,17 +489,17 @@ ExprP parse_expr_top(state *s, FILE* f) {
 	return e;
 }
 
-ExprP car(state *s, ExprP list) {
+Expr *car(state *s, Expr *list) {
 	return partial_apply(s, list, s->cK);
 }
 
-ExprP cdr(state *s, ExprP list) {
+Expr *cdr(state *s, Expr *list) {
 	return partial_apply(s, list, s->KI);
 }
 
-int church2int(state *s, ExprP church) {
+int church2int(state *s, Expr *church) {
 	check(s, 2);
-	ExprP e = partial_apply(s, partial_apply(s, church, s->cInc), s->cZero);
+	Expr *e = partial_apply(s, partial_apply(s, church, s->cInc), s->cZero);
 	*s->church2int_root = e;
 	int result = to_number(partial_eval(s, e));
 	if (result == -1) {
@@ -521,7 +523,7 @@ int main(int argc, char** argv) {
 			exit(1);
 		}
 	}
-	ExprP e = parse_expr_top(s, f);
+	Expr *e = parse_expr_top(s, f);
 	*s->toplevel_root = partial_apply(s, e, newExpr(s, LazyRead));
 
 	for (;;) {
