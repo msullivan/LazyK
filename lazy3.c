@@ -390,11 +390,11 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 	} else if (t == 3/*K1*/) { // 0 allocs
 		e->type = 7/*I1*/;
 		e->arg1 = lhs->arg1;
-		e->arg2 = 0;
+		e->arg2 = NULL;
 	} else if (t == 2/*K*/) { // 0 allocs
 		e->type = 3/*K1*/;
 		e->arg1 = rhs;
-		e->arg2 = 0;
+		e->arg2 = NULL;
 	} else if (t == 5/*S1*/) { // 0 allocs
 		e->type = 6/*S2*/;
 		e->arg1 = lhs->arg1;
@@ -402,7 +402,7 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 	} else if (t == 4/*S*/) { // 0 allocs
 		e->type = 5/*S1*/;
 		e->arg1 = rhs;
-		e->arg2 = 0;
+		e->arg2 = NULL;
 	} else if (t == 9/*Inc*/) { // 0 allocs - but recursion
 		// Inc is the one place we need to force evaluation of an rhs
 		root(s, e);
@@ -416,7 +416,8 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 		if (e->numeric_arg1 == 0) {
 			err_inc_non_num();
 		}
-		e->arg2 = 0;
+		e->arg1 = NULL;
+		e->arg2 = NULL;
 	} else if (t == 8/*LazyRead*/) { // 6 allocs (4+2 from S2)
 		check_rooted(s, 6, e, prev);
 		Expr *lhs = e->arg1;
