@@ -371,7 +371,7 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr *&prev) {
 	case S2: // 2 allocs
 	{
 		check_rooted(2, e, prev);
-		//type = A; // XXX: Why is this OK?
+		//type = A; // type already A
 		Expr *lhs = e->arg1, *rhs = e->arg2;
 		e->arg1 = partial_apply(lhs->arg1, rhs);
 		e->arg2 = partial_apply(lhs->arg2, rhs);
@@ -712,6 +712,7 @@ int main(int argc, char** argv) {
 			return ch-256;
 		}
 		putchar(ch);
+
 		check(1);
 		*toplevel_root = cdr(*toplevel_root);
 	}

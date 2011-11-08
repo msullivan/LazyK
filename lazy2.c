@@ -31,7 +31,7 @@
 //    stream.
 //
 
-#define DEBUG_COUNTERS 1
+#define DEBUG_COUNTERS 0
 
 #include <assert.h>
 #include <stdio.h>
@@ -70,7 +70,7 @@ static Expr *next_alloc = (Expr *)space1;//from_space_start;
 static Expr **work_stack_top = (Expr **)(space1 + HEAP_SIZE);//(Expr **)from_space_end;
 
 
-typedef enum Type { A, K, K1, S, S1, S2, I1, LazyRead, Inc, Num, Free } Type;
+typedef enum Type { A, K, K1, S, S1, S2, I, I1, LazyRead, Inc, Num, Free } Type;
 
 
 struct Expr {
@@ -116,7 +116,7 @@ static inline int to_number(Expr *e) {
 
 Expr cK = Expr0(K);
 Expr cS = Expr0(S);
-Expr cI = Expr2(S2, &cK, &cK);
+Expr cI = Expr0(I);
 Expr KI = Expr1(K1, &cI);
 
 Expr KS = Expr1(K1, &cS);
@@ -289,6 +289,12 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr **prev) {
 	Expr *lhs = e->arg1, *rhs = e->arg2;
 
 	switch (lhs->type) {
+	case I: // 0 allocs
+		e->type = I1;
+		e->arg1 = rhs;
+		e->arg2 = 0;
+		e = rhs;
+		break;
 	case K: // 0 allocs
 		e->type = K1;
 		e->arg1 = rhs;
@@ -298,6 +304,7 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr **prev) {
 		e->type = I1;
 		e->arg1 = lhs->arg1;
 		e->arg2 = 0;
+		e = e->arg1;
 		break;
 	case S: // 0 allocs
 		e->type = S1;
@@ -497,7 +504,7 @@ int main(int argc, char** argv) {
 			return ch-256;
 		}
 		putchar(ch);
-		fflush(stdout);
+
 		check(1);
 		*toplevel_root = cdr(*toplevel_root);
 	}
