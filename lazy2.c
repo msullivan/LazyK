@@ -227,7 +227,9 @@ static inline void root(Expr *e) {
 	roots[root_stack_top++] = e;
 }
 static inline Expr *unroot() {
-	return roots[--root_stack_top];
+	Expr *e = roots[--root_stack_top];
+	roots[root_stack_top] = NULL;
+	return e;
 }
 
 static inline void check_rooted(int n, Expr **e1, Expr **e2) {
@@ -448,12 +450,10 @@ Expr *parse_expr_top(FILE* f) {
 }
 
 static Expr *car(Expr *list) {
-	check(1);
 	return partial_apply(list, &cK);
 }
 
 static Expr *cdr(Expr *list) {
-	check(1);
 	return partial_apply(list, &KI);
 }
 
@@ -489,6 +489,7 @@ int main(int argc, char** argv) {
 	*toplevel_root = partial_apply(e, newExpr(LazyRead));
 
 	for (;;) {
+		check(1);
 		int ch = church2int(car(*toplevel_root));
 		if (ch >= 256) {
 #if DEBUG_COUNTERS
@@ -499,6 +500,7 @@ int main(int argc, char** argv) {
 		}
 		putchar(ch);
 		fflush(stdout);
+		check(1);
 		*toplevel_root = cdr(*toplevel_root);
 	}
 }

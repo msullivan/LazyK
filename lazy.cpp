@@ -599,12 +599,10 @@ Expr* parse_manual_close(Stream* f, int expected_terminator) {
 
 
 static Expr* car(Expr* list) {
-	check(1);
 	return partial_apply(list, &cK);
 }
 
 static Expr* cdr(Expr* list) {
-	check(1);
 	return partial_apply(list, &KI);
 }
 
@@ -697,6 +695,7 @@ int main(int argc, char** argv) {
 	}
 	*toplevel_root = partial_apply(e, new Expr(LazyRead));
 	for (;;) {
+		check(1);
 		int ch = church2int(car(*toplevel_root));
 		if (ch >= 256) {
 #if DEBUG_COUNTERS
@@ -706,6 +705,7 @@ int main(int argc, char** argv) {
 			return ch-256;
 		}
 		putchar(ch);
+		check(1);
 		*toplevel_root = cdr(*toplevel_root);
 	}
 }
