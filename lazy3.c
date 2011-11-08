@@ -56,7 +56,7 @@ typedef struct Expr Expr;
 typedef struct Expr * ExprP;
 struct state_t;
 
-static void oom(struct state_t *s, int n);
+void oom(struct state_t *s, int n);
 
 typedef enum Type { A, K, K1, S, S1, S2, I1, LazyRead, Inc, Num, Free } Type;
 
@@ -114,7 +114,7 @@ typedef struct state_t {
 } state;
 struct state_t main_state;
 
-static inline ExprP alloc_expr(state *s) {
+ExprP alloc_expr(state *s) {
 	INC_COUNTER(news);
 	// We don't do an oom check. The caller better have already
 	// done it with check or check_rooted.
@@ -124,7 +124,7 @@ static inline ExprP alloc_expr(state *s) {
 	return s->next_alloc++;
 }
 
-static inline ExprP newExpr2(state *s, Type t, ExprP a1, ExprP a2) {
+ExprP newExpr2(state *s, Type t, ExprP a1, ExprP a2) {
 	ExprP e = alloc_expr(s);
 	e->forward = 0;
 	e->type = t;
@@ -132,11 +132,11 @@ static inline ExprP newExpr2(state *s, Type t, ExprP a1, ExprP a2) {
 	e->numeric_arg1 = 0;
 	return e;
 }
-static inline ExprP newExpr1(state *s, Type t, ExprP a1) { return newExpr2(s, t, a1, NULL); }
-static inline ExprP newExpr(state *s, Type t) { return newExpr2(s, t, NULL, NULL); }
+ExprP newExpr1(state *s, Type t, ExprP a1) { return newExpr2(s, t, a1, NULL); }
+ExprP newExpr(state *s, Type t) { return newExpr2(s, t, NULL, NULL); }
 
 
-static inline int to_number(ExprP e) {
+int to_number(ExprP e) {
 	int result = (e->type == Num) ? e->numeric_arg1 : -1;
 	return result;
 }
@@ -179,18 +179,18 @@ void setup_state(state *s) {
 }
 
 
-static inline bool in_arena(state *s, ExprP p) {
+bool in_arena(state *s, ExprP p) {
 	return p >= s->from_space_start && p < s->from_space_end;
 }
 
-static inline void push_work(state *s, ExprP e) {
+void push_work(state *s, ExprP e) {
 	*(--s->work_stack_top) = e;
 }
-static inline ExprP pop_work(state *s) {
+ExprP pop_work(state *s) {
 	return *s->work_stack_top++;
 }
 
-static inline ExprP copy_object(state *s, ExprP obj) {
+ExprP copy_object(state *s, ExprP obj) {
 	//assert(obj != (Expr*)(-2));
 	if (!in_arena(s, obj)) return obj;
 	if (obj->forward) {
@@ -208,7 +208,7 @@ static inline ExprP copy_object(state *s, ExprP obj) {
 	return s->next_alloc++;
 }
 
-static void gc(state *s) {
+void gc(state *s) {
 	INC_COUNTER(gcs);
 	// Set up next_alloc to point into the to-space
 	s->next_alloc = s->to_space_start;
@@ -241,11 +241,11 @@ static void gc(state *s) {
 	s->to_space_end = tmp;
 }
 
-static inline bool is_exhausted(state *s, int n) {
+bool is_exhausted(state *s, int n) {
 	return s->next_alloc + n >= s->from_space_end;
 }
 
-static void oom(state *s, int n) {
+void oom(state *s, int n) {
 	gc(s);
 	if (is_exhausted(s, n)) {
 		fprintf(stderr, "out of memory!\n");
@@ -253,20 +253,20 @@ static void oom(state *s, int n) {
 	}
 }
 
-static inline void check(state *s, int n) {
+void check(state *s, int n) {
 	if (is_exhausted(s, n)) {
 		oom(s, n);
 	}
 }
 
-static inline void root(state *s, ExprP e) {
+void root(state *s, ExprP e) {
 	s->roots[s->root_stack_top++] = e;
 }
-static inline ExprP unroot(state *s) {
+ExprP unroot(state *s) {
 	return s->roots[--s->root_stack_top];
 }
 
-static inline void check_rooted(state *s, int n, ExprP *e1, ExprP *e2) {
+void check_rooted(state *s, int n, ExprP *e1, ExprP *e2) {
 	if (is_exhausted(s, n)) {
 		root(s, *e1);
 		root(s, *e2);
@@ -276,7 +276,7 @@ static inline void check_rooted(state *s, int n, ExprP *e1, ExprP *e2) {
 	}
 }
 
-static inline ExprP partial_apply(state *s, ExprP lhs, ExprP rhs) { // 1 alloc
+ExprP partial_apply(state *s, ExprP lhs, ExprP rhs) { // 1 alloc
 	// You could do something more complicated here,
 	// but I tried it and it didn't seem to improve
 	// execution speed.
@@ -301,7 +301,7 @@ ExprP make_church_char(state *s, int ch) {
 	return s->cached_church_chars[ch];
 }
 
-static inline ExprP drop_i1(ExprP cur) {
+ExprP drop_i1(ExprP cur) {
 	// Seperating out this into two checks gets a real speed win.
 	// Presumably due to branch prediction.
 	if (cur->type == I1) {
@@ -312,13 +312,13 @@ static inline ExprP drop_i1(ExprP cur) {
 	return cur;
 }
 
-static ExprP partial_eval(state *s, ExprP node);
+ExprP partial_eval(state *s, ExprP node);
 
 // This function modifies the object in-place so that
 // all references to it see the new version.
 // An additional root gets past in by reference so that we can root it
 // if we need to. I don't really like it but it is fast.
-static inline ExprP partial_eval_primitive_application(state *s, ExprP e, ExprP *prev) {
+ExprP partial_eval_primitive_application(state *s, ExprP e, ExprP *prev) {
 	INC_COUNTER(prim_apps);
 
 	e->arg2 = drop_i1(e->arg2); // do it in place to free up space
@@ -412,7 +412,7 @@ ExprP Expr::partial_eval() {
 // evaluates until the toplevel thing is not a function application.
 // a stack of nodes that are waiting for their first argument to be evaluated is built,
 // chained through the first argument field
-static ExprP partial_eval(state *s, ExprP node) {
+ExprP partial_eval(state *s, ExprP node) {
 	INC_COUNTER(part_apps);
 
 	ExprP prev = 0;
@@ -483,15 +483,15 @@ ExprP parse_expr_top(state *s, FILE* f) {
 	return e;
 }
 
-static ExprP car(state *s, ExprP list) {
+ExprP car(state *s, ExprP list) {
 	return partial_apply(s, list, s->cK);
 }
 
-static ExprP cdr(state *s, ExprP list) {
+ExprP cdr(state *s, ExprP list) {
 	return partial_apply(s, list, s->KI);
 }
 
-static int church2int(state *s, ExprP church) {
+int church2int(state *s, ExprP church) {
 	check(s, 2);
 	ExprP e = partial_apply(s, partial_apply(s, church, s->cInc), s->cZero);
 	*s->church2int_root = e;
