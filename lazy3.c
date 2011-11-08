@@ -42,10 +42,12 @@ int num(int num) { printf("%d", num); return 0; }
 int fail() { abort(); return 0; }
 
 // Really, we want to be able to have:
-// typedef enum Type { A = 1, K, K1, S, S1, S2, I1, LazyRead, Inc, Num, Free } Type;
+// typedef enum Type { A = 1, K, K1, S, S1, S2, I1, LazyRead,
+//                     Inc, Num, Free } Type;
 // But we don't get that in C0. If we ran the C preprocessor, that would
 // also be much nicer. Instead we write things like S2/*6/. Sigh.
-// N.B.: The type tags start at 1 so that we can negate the tags to mark them in the gc.
+// N.B.: The type tags start at 1 so that we can negate the tags to
+// mark them in the gc.
 
 typedef int Type;
 
@@ -300,7 +302,8 @@ Expr *make_church_char(state *s, int ch) {
 		} else if (ch == 1) {
 			s->cached_church_chars[ch] = s->cI;
 		} else {		
-			s->cached_church_chars[ch] = newExpr2(s, 6/*S2*/, s->SKSK, make_church_char(s, ch-1));
+			s->cached_church_chars[ch] = newExpr2(s, 6/*S2*/, s->SKSK,
+			                                      make_church_char(s, ch-1));
 		}
 	}
 	return s->cached_church_chars[ch];
@@ -320,27 +323,26 @@ Expr *drop_i1(Expr *cur) {
 Expr *partial_eval(state *s, Expr *node);
 
 int print_runtime_error() {
-	c(82);c(117);c(110);c(116);c(105);c(109);c(101);c(32);c(101);c(114);c(114);
-	c(111);c(114);c(58);c(32);
-	c(105);c(110);c(118);c(97);c(108);c(105);c(100);
-	c(32);c(111);c(117);c(116);c(112);c(117);c(116);c(32);c(102);c(111);c(114);
-	c(109);c(97);c(116);c(32);
+	c(82);c(117);c(110);c(116);c(105);c(109);c(101);c(32);c(101);c(114);
+	c(114);c(111);c(114);c(58);c(32);c(105);c(110);c(118);c(97);c(108);
+	c(105);c(100);c(32);c(111);c(117);c(116);c(112);c(117);c(116);c(32);
+	c(102);c(111);c(114);c(109);c(97);c(116);c(32);
 	return 0;
 }
 int err_inc_non_num() {
 	// "Runtime error: invalid output format (applied inc to a non-number)\n"
 	print_runtime_error();
-	c(40);c(97);c(112);c(112);c(108);c(105);c(101);
-	c(100);c(32);c(105);c(110);c(99);c(32);c(116);c(111);c(32);c(97);c(32);
-	c(110);c(111);c(110);c(45);c(110);c(117);c(109);c(98);c(101);c(114);c(41);c(10);
+	c(40);c(97);c(112);c(112);c(108);c(105);c(101);c(100);c(32);c(105);
+	c(110);c(99);c(32);c(116);c(111);c(32);c(97);c(32);c(110);c(111);
+	c(110);c(45);c(110);c(117);c(109);c(98);c(101);c(114);c(41);c(10);
 	return fail();
 }
 int err_apply_num() {
 	//"Runtime error: invalid output format (attempted to apply a number)\n"
 	print_runtime_error();
-	c(40);c(97);c(116);c(116);c(101);c(109);c(112);
-	c(116);c(101);c(100);c(32);c(116);c(111);c(32);c(97);c(112);c(112);c(108);
-	c(121);c(32);c(97);c(32);c(110);c(117);c(109);c(98);c(101);c(114);c(41);c(10);
+	c(40);c(97);c(116);c(116);c(101);c(109);c(112);c(116);c(101);c(100);
+	c(32);c(116);c(111);c(32);c(97);c(112);c(112);c(108);c(121);c(32);
+	c(97);c(32);c(110);c(117);c(109);c(98);c(101);c(114);c(41);c(10);
 	return fail();
 }
 int err_not_num() {
@@ -353,11 +355,12 @@ int err_not_num() {
 }
 int err_invalid_type(Type t) {
 	//"INTERNAL ERROR: invalid type in partial_eval_primitive_application (%d)\n"
-	c(73);c(78);c(84);c(69);c(82);c(78);c(65);c(76);c(32);c(69);c(82);c(82);c(79);
-	c(82);c(58);c(32);c(105);c(110);c(118);c(97);c(108);c(105);c(100);c(32);c(116);
-	c(121);c(112);c(101);c(32);c(105);c(110);c(32);c(112);c(97);c(114);c(116);c(105);
-	c(97);c(108);c(95);c(101);c(118);c(97);c(108);c(95);c(112);c(114);c(105);c(109);
-	c(105);c(116);c(105);c(118);c(101);c(95);c(97);c(112);c(112);c(108);c(105);c(99);
+	c(73);c(78);c(84);c(69);c(82);c(78);c(65);c(76);c(32);c(69);c(82);
+	c(82);c(79);c(82);c(58);c(32);c(105);c(110);c(118);c(97);c(108);
+	c(105);c(100);c(32);c(116);c(121);c(112);c(101);c(32);c(105);c(110);
+	c(32);c(112);c(97);c(114);c(116);c(105);c(97);c(108);c(95);c(101);
+	c(118);c(97);c(108);c(95);c(112);c(114);c(105);c(109);c(105);c(116);
+	c(105);c(118);c(101);c(95);c(97);c(112);c(112);c(108);c(105);c(99);
 	c(97);c(116);c(105);c(111);c(110);c(32);c(40);c(37);
 	num(t);
 	c(41);c(10);
@@ -436,8 +439,8 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 }
 
 // evaluates until the toplevel thing is not a function application.
-// a stack of nodes that are waiting for their first argument to be evaluated is built,
-// chained through the first argument field
+// a stack of nodes that are waiting for their first argument to be
+// evaluated is built, chained through the first argument field
 Expr *partial_eval(state *s, Expr *node) {
 	s->part_apps++;
 
@@ -454,7 +457,8 @@ Expr *partial_eval(state *s, Expr *node) {
 			cur->arg1 = prev;
 			prev = cur; cur = next;
 		}
-		if (!prev) { // we've gotten it down to something that isn't an application
+		if (!prev) {
+			// we've gotten it down to something that isn't an application
 			break;
 		}
 		Expr *next = cur; cur = prev;
