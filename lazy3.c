@@ -236,7 +236,7 @@ void gc(state *s) {
 		}
 	}
 
-	printf("gc done: reclaimed %d/%lu\n", s->free_slots, HEAP_SIZE);
+	//printf("gc done: reclaimed %d/%lu\n", s->free_slots, HEAP_SIZE);
 }
 
 bool is_exhausted(state *s, int n) {
@@ -266,14 +266,13 @@ Expr *unroot(state *s) {
 	return s->roots[s->root_stack_top];
 }
 
-void check_rooted(state *s, int n, Expr **e1, Expr **e2) {
+Expr *check_rooted(state *s, int n, Expr *e1) {
 	if (is_exhausted(s, n)) {
-		root(s, *e1);
-		root(s, *e2);
+		root(s, e1);
 		oom(s, n);
-		*e2 = unroot(s);
-		*e1 = unroot(s);
+		e1 = unroot(s);
 	}
+	return e1;
 }
 
 Expr *partial_apply(state *s, Expr *lhs, Expr *rhs) { // 1 alloc
@@ -316,9 +315,7 @@ Expr *partial_eval(state *s, Expr *node);
 
 // This function modifies the object in-place so that
 // all references to it see the new version.
-// An additional root gets past in by reference so that we can root it
-// if we need to. I don't really like it but it is fast.
-Expr *partial_eval_primitive_application(state *s, Expr *e, Expr **prev) {
+Expr *partial_eval_primitive_application(state *s, Expr *e) {
 	INC_COUNTER(prim_apps);
 
 	e->arg2 = drop_i1(e->arg2); // do it in place to free up space
@@ -348,7 +345,7 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr **prev) {
 		break;
 	case LazyRead: // 6 allocs (4+2 from S2)
 	{
-		check_rooted(s, 6, &e, prev);
+		e = check_rooted(s, 6, e);
 		Expr *lhs = e->arg1;
 		lhs->type = S2;
 		lhs->arg1 = newExpr2(s, S2, s->cI, newExpr1(s, K1, make_church_char(s, getchar())));
@@ -357,7 +354,7 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr **prev) {
 	}
 	case S2: // 2 allocs
 	{
-		check_rooted(s, 2, &e, prev);
+		e = check_rooted(s, 2, e);
 		//type = A; // XXX: Why is this OK?
 		Expr *lhs = e->arg1;
 		Expr *rhs = e->arg2;
@@ -369,9 +366,7 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr **prev) {
 	{
 		// Inc is the one place we need to force evaluation of an rhs
 		root(s, e);
-		root(s, *prev);
 		Expr *rhs_res = partial_eval(s, rhs);
-		*prev = unroot(s);
 		e = unroot(s);
 
 		e->type = Num;
@@ -437,7 +432,9 @@ Expr *partial_eval(state *s, Expr *node) {
 		prev = cur->arg1;
 		cur->arg1 = next;
 
-		cur = partial_eval_primitive_application(s, cur, &prev);
+		root(s, prev);
+		cur = partial_eval_primitive_application(s, cur);
+		prev = unroot(s);
 	}
 
 	return cur;
