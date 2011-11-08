@@ -341,6 +341,7 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr *&prev) {
 		e->type = I1;
 		e->arg1 = lhs->arg1;
 		e->arg2 = 0;
+		e = lhs->arg1;
 		break;
 	case S: // 0 allocs
 		e->type = S1;
