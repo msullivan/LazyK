@@ -319,9 +319,13 @@ Expr *make_church_char(state *s, int ch) {
 Expr *drop_i1(Expr *cur) {
 	// Seperating out this into two checks gets a real speed win.
 	// Presumably due to branch prediction.
-	while (cur->type == 7/*I1*/) {
-		cur = cur->arg1;
-	} 
+	if (cur->type == 7/*I1*/) {
+		// This really wants to be a do-while.
+		while (true) {
+			cur = cur->arg1;
+			if (cur->type != 7/*I1*/) break;
+		}
+	}
 	return cur;
 }
 
