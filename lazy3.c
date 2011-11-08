@@ -35,31 +35,31 @@
 
 #include <assert.h>
 #include <stdio.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <ctype.h>
 
 #if DEBUG_COUNTERS
 #define INC_COUNTER(n) ((s->n)++)
 #else
 #define INC_COUNTER(n)
 #endif
-#define MAX_ROOTS 1000
 
 #define alloc(ty) calloc(sizeof(ty), 1)
 #define alloc_array(ty,size) calloc(sizeof(ty), size)
 
-struct Expr;
+#define A 1/*A*/
+#define K 2/*K*/
+#define K1 3/*K1*/
+#define S 4/*S*/
+#define S1 5/*S1*/
+#define S2 6/*S2*/
+#define I1 7/*I1*/
+#define LazyRead 8/*LazyRead*/
+#define Inc 9/*Inc*/
+#define Num 10/*Num*/
+typedef int Type;
+
 typedef struct Expr Expr;
-typedef struct Expr * ExprP;
-struct state_t;
-
-void oom(struct state_t *s, int n);
-
-typedef enum Type { A = 1, K, K1, S, S1, S2, I1, LazyRead, Inc, Num, Free } Type;
-
 struct Expr {
 	Expr *aux;
 	Expr *arg1;
@@ -67,9 +67,6 @@ struct Expr {
 	int numeric_arg1;
 	Type type;
 };
-#define MB (1024*1024)
-#define HEAP_SIZE_BYTES (64*MB)
-#define HEAP_SIZE (HEAP_SIZE_BYTES/sizeof(struct Expr))
 
 typedef struct state_t {
 	// Perf counters
@@ -79,16 +76,13 @@ typedef struct state_t {
 	int part_apps;
 
 	// Garbage collection
+	int HEAP_SIZE;
 	Expr **space; //[HEAP_SIZE]
 	int free_slots;
 	Expr *next_alloc;
 	Expr *work_stack_top;
 
 	// Roots
-	// we need 2 roots for toplevel and church2int,
-	// and then 2 per simultaneous invocation of partial_eval.
-	// partial_eval only recurses as deep as the biggest number printed,
-	// which can't /reasonably/ be above 512. This should be more than enough.
 	Expr **roots; // [MAX_ROOTS]
 	int root_stack_top;
 	Expr **cached_church_chars; //[257]
@@ -146,12 +140,21 @@ Expr *prepend(Expr *hd, Expr *tl) {
 	return hd;
 }
 
-void setup_state(state *s) {
+int setup_state(state *s) {
 	// Set up gc fields
+	int MB = 1024*1024;
+	int HEAP_SIZE_BYTES = 64*MB;
+	int HEAP_SIZE = HEAP_SIZE_BYTES/sizeof(struct Expr);
 	s->space = alloc_array(Expr *, HEAP_SIZE);
+	// we need 2 roots for toplevel and church2int,
+	// and then 2 per simultaneous invocation of partial_eval.
+	// partial_eval only recurses as deep as the biggest number printed,
+	// which can't /reasonably/ be above 512. This should be more than enough.
+	int MAX_ROOTS = 1000;
 	s->roots = alloc_array(Expr *, MAX_ROOTS);
 
 	s->free_slots = HEAP_SIZE;
+	s->HEAP_SIZE = HEAP_SIZE;
 	Expr *hd = NULL;
 	for (int i = 0; i < HEAP_SIZE; i++) {
 		s->space[i] = alloc(Expr);
@@ -180,10 +183,13 @@ void setup_state(state *s) {
 	for (unsigned i = 0; i <= 256; i++) {
 		make_church_char(s, i);
 	}
+
+	return 0;
 }
 
-void push_work(state *s, Expr *e) {
+int push_work(state *s, Expr *e) {
 	s->work_stack_top = prepend(e, s->work_stack_top);
+	return 0;
 }
 Expr *pop_work(state *s) {
 	Expr *expr = s->work_stack_top;
@@ -192,15 +198,16 @@ Expr *pop_work(state *s) {
 	return expr;
 }
 
-void mark(state *s, Expr *e) {
-	if (e == NULL) return;
-	if ((int)e->type < 0) return;
+int mark(state *s, Expr *e) {
+	if (e == NULL) return 0;
+	if ((int)e->type < 0) return 0;
 	e->type = -e->type;
 	push_work(s, e);
+	return 0;
 }
 
 // Do a simple mark/sweep garbage collection over our heap 
-void gc(state *s) {
+int gc(state *s) {
 	INC_COUNTER(gcs);
 	// Set up next_alloc to point into the to-space
 	s->next_alloc = NULL;
@@ -226,8 +233,10 @@ void gc(state *s) {
 	}
 
 	// Sweep
+	int HEAP_SIZE = s->HEAP_SIZE;
+	Expr **space = s->space;
 	for (int i = 0; i < HEAP_SIZE; i++) {
-		Expr *e = s->space[i];
+		Expr *e = space[i];
 		if ((int)e->type < 0) { // Marked: clear the mark
 			e->type = -e->type;
 		} else { // Not marked: add to free list
@@ -236,37 +245,41 @@ void gc(state *s) {
 		}
 	}
 
-	printf("gc done: reclaimed %d/%lu\n", s->free_slots, HEAP_SIZE);
+	printf("gc done: reclaimed %d/%d\n", s->free_slots, HEAP_SIZE);
+	return 0;
 }
 
 bool is_exhausted(state *s, int n) {
 	return s->free_slots < n;
 }
 
-void oom(state *s, int n) {
+int oom(state *s, int n) {
 	gc(s);
 	if (is_exhausted(s, n)) {
 		fprintf(stderr, "out of memory!\n");
-		exit(4);
+		abort();
 	}
+	return 0;
 }
 
-void check(state *s, int n) {
+int check(state *s, int n) {
 	if (is_exhausted(s, n)) {
 		oom(s, n);
 	}
+	return 0;
 }
 
-void root(state *s, Expr *e) {
+int root(state *s, Expr *e) {
 	s->roots[s->root_stack_top] = e;
 	s->root_stack_top++;
+	return 0;
 }
 Expr *unroot(state *s) {
 	--s->root_stack_top;
 	return s->roots[s->root_stack_top];
 }
 
-void check_rooted(state *s, int n, Expr *e1, Expr *e2) {
+int check_rooted(state *s, int n, Expr *e1, Expr *e2) {
 	if (is_exhausted(s, n)) {
 		root(s, e1);
 		root(s, e2);
@@ -274,6 +287,7 @@ void check_rooted(state *s, int n, Expr *e1, Expr *e2) {
 		unroot(s);
 		unroot(s);
 	}
+	return 0;
 }
 
 Expr *partial_apply(state *s, Expr *lhs, Expr *rhs) { // 1 alloc
@@ -314,6 +328,7 @@ Expr *drop_i1(Expr *cur) {
 
 Expr *partial_eval(state *s, Expr *node);
 
+long int counts[15];
 // This function modifies the object in-place so that
 // all references to it see the new version.
 // An additional root gets past in by reference so that we can root it
@@ -325,48 +340,34 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 	Expr *lhs = e->arg1;
 	Expr *rhs = e->arg2;
 
-	switch (lhs->type) {
-	case K: // 0 allocs
-		e->type = K1;
-		e->arg1 = rhs;
-		e->arg2 = 0;
-		break;
-	case K1: // 0 allocs
-		e->type = I1;
-		e->arg1 = lhs->arg1;
-		e->arg2 = 0;
-		break;
-	case S: // 0 allocs
-		e->type = S1;
-		e->arg1 = rhs;
-		e->arg2 = 0;
-		break;
-	case S1: // 0 allocs
-		e->type = S2;
-		e->arg1 = lhs->arg1;
-		e->arg2 = rhs;
-		break;
-	case LazyRead: // 6 allocs (4+2 from S2)
-	{
-		check_rooted(s, 6, e, prev);
-		Expr *lhs = e->arg1;
-		lhs->type = S2;
-		lhs->arg1 = newExpr2(s, S2, s->cI, newExpr1(s, K1, make_church_char(s, getchar())));
-		lhs->arg2 = newExpr1(s, K1, newExpr(s, LazyRead));
-		// fall thru
-	}
-	case S2: // 2 allocs
-	{
+	counts[lhs->type]++;
+
+	// As an optimization, we sort the cases in order of frequency.
+	int t = lhs->type;
+	if (t == S2) { // 2 allocs
 		check_rooted(s, 2, e, prev);
 		//type = A; // XXX: Why is this OK?
 		Expr *lhs = e->arg1;
 		Expr *rhs = e->arg2;
 		e->arg1 = partial_apply(s, lhs->arg1, rhs);
 		e->arg2 = partial_apply(s, lhs->arg2, rhs);
-		break;
-	}
-	case Inc: // 0 allocs - but recursion
-	{
+	} else if (t == K1) { // 0 allocs
+		e->type = I1;
+		e->arg1 = lhs->arg1;
+		e->arg2 = 0;
+	} else if (t == K) { // 0 allocs
+		e->type = K1;
+		e->arg1 = rhs;
+		e->arg2 = 0;
+	} else if (t == S1) { // 0 allocs
+		e->type = S2;
+		e->arg1 = lhs->arg1;
+		e->arg2 = rhs;
+	} else if (t == S) { // 0 allocs
+		e->type = S1;
+		e->arg1 = rhs;
+		e->arg2 = 0;
+	} else if (t == Inc) { // 0 allocs - but recursion
 		// Inc is the one place we need to force evaluation of an rhs
 		root(s, e);
 		root(s, prev);
@@ -377,39 +378,37 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 		e->type = Num;
 		e->numeric_arg1 = to_number(rhs_res) + 1;
 		if (e->numeric_arg1 == 0) {
-			fputs("Runtime error: invalid output format (attempted to apply inc to a non-number)\n", stderr);
-			exit(3);
+			fputs("Runtime error: invalid output format (attempted to apply inc to a non-number)\n",
+			      stderr);
+			abort();
 		}
 		e->arg2 = 0;
-		break;
-	}
-	case Num:
+	} else if (t == LazyRead) { // 6 allocs (4+2 from S2)
+		check_rooted(s, 6, e, prev);
+		Expr *lhs = e->arg1;
+		lhs->type = S2;
+		lhs->arg1 = newExpr2(s, S2, s->cI, newExpr1(s, K1, make_church_char(s, getchar())));
+		lhs->arg2 = newExpr1(s, K1, newExpr(s, LazyRead));
+
+		// duplicate the S2 code
+		check_rooted(s, 2, e, prev);
+		//type = A; // XXX: Why is this OK?
+		lhs = e->arg1;
+		Expr *rhs = e->arg2;
+		e->arg1 = partial_apply(s, lhs->arg1, rhs);
+		e->arg2 = partial_apply(s, lhs->arg2, rhs);
+	} else if (t == Num) {
 		fputs("Runtime error: invalid output format (attempted to apply a number)\n", stderr);
-		exit(3);
-	default:
+		abort();
+	} else {
 		fprintf(stderr,
 		        "INTERNAL ERROR: invalid type in partial_eval_primitive_application (%d)\n",
 		        e->arg1->type);
 		abort();
-		exit(4);
 	}
 
 	return e;
 }
-
-/*
-Expr *Expr::partial_eval() {
-	Expr *cur = this;
-	for (;;) {
-		cur = cur->drop_i1();
-		if (cur->type != A) {
-			return cur;
-		}
-		cur->arg1 = cur->arg1->partial_eval();
-		cur->partial_eval_primitive_application();
-	}
-}
-*/
 
 // evaluates until the toplevel thing is not a function application.
 // a stack of nodes that are waiting for their first argument to be evaluated is built,
@@ -444,41 +443,38 @@ Expr *partial_eval(state *s, Expr *node) {
 }
 
 
-Expr *parse_expr(state *s, FILE* f) {
+Expr *parse_expr(state *s) {
 	int ch;
 
 	// Wait until we get something we care about
 	do {
-		ch = fgetc(f);
-		if (ch == '#') {
-			while ((ch = fgetc(f)) != '\n')
+		ch = getchar();
+		if (ch == 35/*'#'*/) {
+			while ((ch = getchar()) != 10/*'\n'*/)
 				;
 		}
-	} while (ch == '\n' || ch == ' ');
-	
-	switch (ch) {
-	case '`':
-	{
-		Expr *p = parse_expr(s, f);
-		Expr *q = parse_expr(s, f);
+	} while (ch == 10/*'\n'*/ || ch == 32/*' '*/);
+
+	if (ch == 96/*'`'*/) {
+		Expr *p = parse_expr(s);
+		Expr *q = parse_expr(s);
 		return partial_apply(s, p, q);
-	}
-	case 'k': case 'K':
+	} else if (ch == 107/*'k'*/) {
 		return s->cK;
-	case 's': case 'S':
+	} else if (ch == 115/*'s'*/) {
 		return s->cS;
-	case 'i': case 'I':
+	} else if (ch == 105/*'i'*/) {
 		return s->cI;
-	default:
+	} else {
 		printf("Invalid character!\n");
-		exit(1);
+		abort();
 	}
-	return 0;
+	return NULL;
 }
 
-Expr *parse_expr_top(state *s, FILE* f) {
-	Expr *e = parse_expr(s, f);
-	if (fgetc(f) != '\n') {
+Expr *parse_expr_top(state *s) {
+	Expr *e = parse_expr(s);
+	if (getchar() != 10/*'\n'*/) {
 		fprintf(stderr, "input program missing trailing newline\n");
 		exit(1);
 	}
@@ -500,7 +496,7 @@ int church2int(state *s, Expr *church) {
 	int result = to_number(partial_eval(s, e));
 	if (result == -1) {
 		fputs("Runtime error: invalid output format (result was not a number)\n", stderr);
-		exit(3);
+		abort();
 	}
 	s->roots[1] = NULL;
 	return result;
@@ -511,15 +507,7 @@ int main(int argc, char** argv) {
 	state *s = alloc(state);
 	setup_state(s);
 	
-	FILE *f = stdin;
-	if (argc == 2) {
-		f = fopen(argv[1], "r");
-		if (!f) {
-			fprintf(stderr, "Unable to open the file \"%s\".\n", argv[1]);
-			exit(1);
-		}
-	}
-	Expr *e = parse_expr_top(s, f);
+	Expr *e = parse_expr_top(s);
 	s->roots[0] = partial_apply(s, e, newExpr(s, LazyRead));
 
 	for (;;) {
@@ -529,6 +517,9 @@ int main(int argc, char** argv) {
 			fprintf(stderr, "     gcs: %d\n    news: %d\n", s->gcs, s->news);
 			fprintf(stderr, "primapps: %d\npartapps: %d\n", s->prim_apps, s->part_apps);
 #endif
+			for (int i = A; i <= Num; i++) {
+				printf("%2d: %ld\n", i, counts[i]);
+			}
 			return ch-256;
 		}
 		putchar(ch);
