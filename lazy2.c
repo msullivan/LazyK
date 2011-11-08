@@ -108,20 +108,26 @@ static inline int to_number(Expr *e) {
 	return result;
 }
 
+#define Expr0(T) {NULL, NULL, NULL, T}
+#define Expr1(T, ARG1) {NULL, ARG1, NULL, T}
+#define Expr2(T, ARG1, ARG2) {NULL, ARG1, ARG2, T}
 
 
-Expr *cK () { return newExpr(K); }
-Expr *cS () { return newExpr(S); }
-Expr *cI () { return newExpr2(S2, cK(), cK()); }
-Expr *KI () { return newExpr1(K1, cI()); }
+Expr cK = Expr0(K);
+Expr cS = Expr0(S);
+Expr cI = Expr2(S2, &cK, &cK);
+Expr KI = Expr1(K1, &cI);
 
-Expr *SI() { return newExpr1(S1, cI()); }
-Expr *KS () { return newExpr1(K1, cS()); }
-Expr *KK () { return newExpr1(K1, cK()); }
-Expr *SKSK () { return newExpr2(S2, KS(), cK()); }
+Expr SI = Expr1(S1, &cI);
+Expr KS = Expr1(K1, &cS);
+Expr KK = Expr1(K1, &cK);
+Expr SKSK = Expr2(S2, &KS, &cK);
+Expr SIKS = Expr2(S2, &cI, &KS);
+Expr Iota = Expr2(S2, &SIKS, &KK);
 
-Expr *cInc () { return newExpr(Inc); }
-Expr *cZero () { return newExpr(Num); }
+Expr cInc = Expr0(Inc);
+Expr cZero = Expr0(Num);
+
 
 
 // Roots
@@ -250,11 +256,11 @@ Expr *make_church_char(int ch) {
 
 	if (cached_church_chars[ch] == 0) {
 		if (ch == 0) {
-			cached_church_chars[ch] = cI();
+			cached_church_chars[ch] = &cI;
 		} else if (ch == 1) {
-			cached_church_chars[ch] = KI();
+			cached_church_chars[ch] = &KI;
 		} else {		
-			cached_church_chars[ch] = newExpr2(S2, SKSK(), make_church_char(ch-1));
+			cached_church_chars[ch] = newExpr2(S2, &SKSK, make_church_char(ch-1));
 		}
 	}
 	return cached_church_chars[ch];
@@ -309,7 +315,7 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr **prev) {
 		check_rooted(6, &e, prev);
 		Expr *lhs = e->arg1;
 		lhs->type = S2;
-		lhs->arg1 = newExpr2(S2, cI(), newExpr1(K1, make_church_char(getchar())));
+		lhs->arg1 = newExpr2(S2, &cI, newExpr1(K1, make_church_char(getchar())));
 		lhs->arg2 = newExpr1(K1, newExpr(LazyRead));
 		// fall thru
 	}
@@ -421,11 +427,11 @@ Expr *parse_expr(FILE* f) {
 		return partial_apply(p, q);
 	}
 	case 'k': case 'K':
-		return cK(); // XXX
+		return &cK; // XXX
 	case 's': case 'S':
-		return cS(); // XXX
+		return &cS; // XXX
 	case 'i': case 'I':
-		return cI(); // XXX
+		return &cI; // XXX
 	default:
 		printf("Invalid character!\n");
 		exit(1);
@@ -445,16 +451,16 @@ Expr *parse_expr_top(FILE* f) {
 
 
 static Expr *car(Expr *list) {
-	return partial_apply(list, cK());
+	return partial_apply(list, &cK);
 }
 
 static Expr *cdr(Expr *list) {
-	return partial_apply(list, KI());
+	return partial_apply(list, &KI);
 }
 
 static int church2int(Expr *church) {
 	check(2);
-	Expr *e = partial_apply(partial_apply(church, cInc()), cZero());
+	Expr *e = partial_apply(partial_apply(church, &cInc), &cZero);
 	*church2int_root = e;
 	int result = to_number(partial_eval(e));
 	if (result == -1) {
