@@ -42,8 +42,8 @@ int num(int num) { printf("%d", num); return 0; }
 int fail() { abort(); return 0; }
 
 // Really, we want to be able to have:
-// typedef enum Type { A = 1, K, K1, S, S1, S2, I1, LazyRead,
-//                     Inc, Num, Free } Type;
+// typedef enum Type { Free = 0, A = 1, K, K1, S, S1, S2, I1, LazyRead,
+//                     Inc, Num } Type;
 // But we don't get that in C0. If we ran the C preprocessor, that would
 // also be much nicer. Instead we write things like S2/*6/. Sigh.
 // N.B.: The type tags start at 1 so that we can negate the tags to
@@ -93,6 +93,9 @@ typedef struct state_t {
 	Expr *cInc;
 	Expr *cZero;
 } state;
+
+int debug_spew(state *s);
+int root(state *s, Expr *e);
 
 Expr *alloc_expr(state *s) {
 	s->news++;
@@ -192,7 +195,7 @@ Expr *pop_work(state *s) {
 
 int mark(state *s, Expr *e) {
 	if (e == NULL) return 0;
-	if ((int)e->type < 0) return 0;
+	if (e->type < 0) return 0;
 	e->type = -e->type;
 	push_work(s, e);
 	return 0;
@@ -228,9 +231,10 @@ int gc(state *s) {
 	Expr **space = s->space;
 	for (int i = 0; i < HEAP_SIZE; i++) {
 		Expr *e = space[i];
-		if ((int)e->type < 0) { // Marked: clear the mark
+		if (e->type < 0) { // Marked: clear the mark
 			e->type = -e->type;
 		} else { // Not marked: add to free list
+			e->type = 0;
 			s->next_alloc = prepend(e, s->next_alloc);
 			s->free_slots++;
 		}
@@ -418,7 +422,7 @@ Expr *partial_eval_primitive_application(state *s, Expr *e, Expr *prev) {
 		}
 		e->arg1 = NULL;
 		e->arg2 = NULL;
-	} else if (t == 8/*LazyRead*/) { // 6 allocs (4+2 from S2)
+	} else if (t == 8/*LazyRead*/) { // 6 allocs
 		check_rooted(s, 6, e, prev);
 		Expr *lhs = e->arg1;
 		lhs->type = 6/*S2*/;
