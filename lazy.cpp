@@ -139,6 +139,9 @@ void Expr::print(Expr* highlight) {
 			arg2->print(highlight);
 			putchar(']');
 			break;
+		case I:
+			putchar('I');
+			break;
 		case I1:
 			putchar('.');
 			arg1->print(highlight);
