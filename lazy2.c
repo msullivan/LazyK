@@ -78,7 +78,7 @@ struct Expr {
 	union {
 		Expr *arg1;
 		int numeric_arg1; // XXX
-	};
+	} u;
 	Expr *arg2;
 	Type type;
 };
@@ -97,7 +97,7 @@ static inline Expr *newExpr2(Type t, Expr *a1, Expr *a2) {
 	struct Expr *e = alloc_expr();
 	e->forward = 0;
 	e->type = t;
-	e->arg1 = a1; e->arg2 = a2;
+	e->u.arg1 = a1; e->arg2 = a2;
 	return e;
 }
 static inline Expr *newExpr1(Type t, Expr *a1) { return newExpr2(t, a1, NULL); }
@@ -105,7 +105,7 @@ static inline Expr *newExpr(Type t) { return newExpr2(t, NULL, NULL); }
 
 
 static inline int to_number(Expr *e) {
-	int result = (e->type == Num) ? e->numeric_arg1 : -1;
+	int result = (e->type == Num) ? e->u.numeric_arg1 : -1;
 	return result;
 }
 
@@ -161,7 +161,7 @@ static inline Expr *copy_object(Expr *obj) {
 
 	*next_alloc = *obj;
 	//obj->type = (Type)1337;
-	//obj->arg1 = obj->arg2 = (Expr*)(-2);
+	//obj->u.arg1 = obj->arg2 = (Expr*)(-2);
 
 	push_work(next_alloc);
 	obj->forward = next_alloc;
@@ -189,7 +189,7 @@ static void gc() {
 		Expr *cursor = pop_work();
 
 		if (cursor->type != Num) {
-			cursor->arg1 = copy_object(cursor->arg1);
+			cursor->u.arg1 = copy_object(cursor->u.arg1);
 			cursor->arg2 = copy_object(cursor->arg2);
 		}
 	}
@@ -270,7 +270,7 @@ static inline Expr *drop_i1(Expr *cur) {
 	// Presumably due to branch prediction.
 	if (cur->type == I1) {
 		do {
-			cur = cur->arg1;
+			cur = cur->u.arg1;
 		} while (cur->type == I1);
 	}
 	return cur;
@@ -286,42 +286,42 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr **prev) {
 	INC_COUNTER(prim_apps);
 
 	e->arg2 = drop_i1(e->arg2); // do it in place to free up space
-	Expr *lhs = e->arg1, *rhs = e->arg2;
+	Expr *lhs = e->u.arg1, *rhs = e->arg2;
 
 	switch (lhs->type) {
 	case I: // 0 allocs
 		e->type = I1;
-		e->arg1 = rhs;
+		e->u.arg1 = rhs;
 		e->arg2 = 0;
 		e = rhs;
 		break;
 	case K: // 0 allocs
 		e->type = K1;
-		e->arg1 = rhs;
+		e->u.arg1 = rhs;
 		e->arg2 = 0;
 		break;
 	case K1: // 0 allocs
 		e->type = I1;
-		e->arg1 = lhs->arg1;
+		e->u.arg1 = lhs->u.arg1;
 		e->arg2 = 0;
-		e = e->arg1;
+		e = e->u.arg1;
 		break;
 	case S: // 0 allocs
 		e->type = S1;
-		e->arg1 = rhs;
+		e->u.arg1 = rhs;
 		e->arg2 = 0;
 		break;
 	case S1: // 0 allocs
 		e->type = S2;
-		e->arg1 = lhs->arg1;
+		e->u.arg1 = lhs->u.arg1;
 		e->arg2 = rhs;
 		break;
 	case LazyRead: // 6 allocs (4+2 from S2)
 	{
 		check_rooted(6, &e, prev);
-		Expr *lhs = e->arg1;
+		Expr *lhs = e->u.arg1;
 		lhs->type = S2;
-		lhs->arg1 = newExpr2(S2, &cI, newExpr1(K1, make_church_char(getchar())));
+		lhs->u.arg1 = newExpr2(S2, &cI, newExpr1(K1, make_church_char(getchar())));
 		lhs->arg2 = newExpr1(K1, newExpr(LazyRead));
 		// fall thru
 	}
@@ -329,8 +329,8 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr **prev) {
 	{
 		check_rooted(2, &e, prev);
 		//e->type = A; // the type was already A
-		Expr *lhs = e->arg1, *rhs = e->arg2;
-		e->arg1 = partial_apply(lhs->arg1, rhs);
+		Expr *lhs = e->u.arg1, *rhs = e->arg2;
+		e->u.arg1 = partial_apply(lhs->u.arg1, rhs);
 		e->arg2 = partial_apply(lhs->arg2, rhs);
 		break;
 	}
@@ -344,8 +344,8 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr **prev) {
 		e = unroot();
 
 		e->type = Num;
-		e->numeric_arg1 = to_number(rhs_res) + 1;
-		if (e->numeric_arg1 == 0) {
+		e->u.numeric_arg1 = to_number(rhs_res) + 1;
+		if (e->u.numeric_arg1 == 0) {
 			fputs("Runtime error: invalid output format (attempted to apply inc to a non-number)\n",
 			      stderr);
 			abort();
@@ -359,7 +359,7 @@ static inline Expr *partial_eval_primitive_application(Expr *e, Expr **prev) {
 	default:
 		fprintf(stderr,
 		        "INTERNAL ERROR: invalid type in partial_eval_primitive_application (%d)\n",
-		        e->arg1->type);
+		        e->u.arg1->type);
 		abort();
 	}
 
@@ -374,7 +374,7 @@ Expr *Expr::partial_eval() {
 		if (cur->type != A) {
 			return cur;
 		}
-		cur->arg1 = cur->arg1->partial_eval();
+		cur->u.arg1 = cur->u.arg1->partial_eval();
 		cur->partial_eval_primitive_application();
 	}
 }
@@ -395,16 +395,16 @@ static Expr *partial_eval(Expr *node) {
 		// something that isn't an application. Once we have that,
 		// we can apply the primitive, and then repeat.
 		while (cur->type == A) {
-			Expr *next = drop_i1(cur->arg1);
-			cur->arg1 = prev;
+			Expr *next = drop_i1(cur->u.arg1);
+			cur->u.arg1 = prev;
 			prev = cur; cur = next;
 		}
 		if (!prev) { // we've gotten it down to something that isn't an application
 			break;
 		}
 		Expr *next = cur; cur = prev;
-		prev = cur->arg1;
-		cur->arg1 = next;
+		prev = cur->u.arg1;
+		cur->u.arg1 = next;
 
 		cur = partial_eval_primitive_application(cur, &prev);
 	}
