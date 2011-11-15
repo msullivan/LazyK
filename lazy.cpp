@@ -1,6 +1,28 @@
 // Lazy K interpreter in C++.
 // For usage see usage() function below.
-// Copyright 2002 Ben Rudiak-Gould. Distributed under the GPL.
+// Copyright 2002 Ben Rudiak-Gould, 2011 Michael Sullivan.
+// Distributed under the GPL.
+//
+// Updated notes:
+// - I rewrote the memory management system to use a semispace
+//   garbage collector instead of reference counting. This
+//   produced a modest performance gain, especially as the heap
+//   size is increased. As it turns out, dealing with roots,
+//   especially roots in a copying collector, is a huge pain.
+// - I de-C++ed some parts, because I don't really care for the
+//   object oriented style all that much and I felt it was
+//   complicating things rather than simplifying them.
+// - I added an actual I node to the combinator representation.
+//   This turned out to be a big performance win, since previously
+//   an unapplied I was represented as (SKK). Since I shows up
+//   a lot in the source code, this definitely hurt things.
+// - I did a bunch of other performance tuning which all in all
+//   sped the interpreter up by about 4 times. *Almost* as fast
+//   as my Haskell version!
+// - I suspect that the reference count based memory management
+//   was the cause of some of the memory leaks Ben Rudiak-Gould
+//   discussed on his Lazy K website. Since Lazy K is lazy, it
+//   can form cycles even without mutation!
 //
 // Implementation notes:
 //  - When Sxyz is reduced to (xz)(yz), both "copies" of z

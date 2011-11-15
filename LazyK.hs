@@ -1,3 +1,12 @@
+-- Lazy K interpreter in Haskell.
+-- Copyright 2011 Michael Sullivan.
+-- Distributed under the GPL.
+-- This interpreter represents lazy k combinators as haskell
+-- functions, thus taking advantage of haskell's built in support for
+-- lazy evaluation. It is kind of cheating.
+-- This supports all of the different syntaxes for Lazy K, but can
+-- only take one source file name as input.
+
 module Main
 (main,
  parse
@@ -57,7 +66,7 @@ getChurchNumeral :: Int -> Comb
 getChurchNumeral n | n < 0 || n > 256 = getChurchNumeral 256
 getChurchNumeral n = churchNumeralTable ! n
 
--- what should nil be??
+-- nil doesn't really need to be anything sensible...
 encodeList :: [Comb] -> Comb
 encodeList = foldr cons i
 decodeList :: Comb -> [Comb]

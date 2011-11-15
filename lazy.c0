@@ -1,6 +1,36 @@
 // Lazy K interpreter in C0.
-// Copyright 2002 Ben Rudiak-Gould. Distributed under the GPL.
-// Copyright 2011 Michael Sullivan.
+// Copyright 2002 Ben Rudiak-Gould, 2011 Michael Sullivan.
+// Distributed under the GPL.
+//
+// This is a C0 port of my modified Lazy K evaluator.
+// Specifically, it is in the "L4" dialect of C0 used by
+// the compilers class, and is thus suitable as a compilers test.
+// This also makes certain bits (printing error messages) really
+// unpleasant. It also means we don't have #define or enums, which
+// sucks a whole lot.
+// It is a simplified version that can only take one
+// input file and can only accept unlambda syntax. It will read
+// an unlambda style Lazy K program on stdin, then a mandatory
+// additional newline, and then begin interpreting it, using
+// the rest of stdin as input. Since when an unlambda program
+// ends is unambiguous, this works out fine.
+//
+// Updated notes:
+// - I rewrote the memory management system to use a mark-sweep
+//   garbage collector instead of reference counting. My original
+//   rewrite used a semispace collector, but mark-sweep seemed
+//   easier to adapt to the memory safe environment of C0
+// - I added an actual I node to the combinator representation.
+//   This turned out to be a big performance win, since previously
+//   an unapplied I was represented as (SKK). Since I shows up
+//   a lot in the source code, this definitely hurt things.
+// - I did a bunch of other performance tuning which all in all
+//   sped the interpreter up by about 4 times. *Almost* as fast
+//   as my Haskell version!
+// - I suspect that the reference count based memory management
+//   was the cause of some of the memory leaks Ben Rudiak-Gould
+//   discussed on his Lazy K website. Since Lazy K is lazy, it
+//   can form cycles even without mutation!
 //
 // Implementation notes:
 //  - When Sxyz is reduced to (xz)(yz), both "copies" of z

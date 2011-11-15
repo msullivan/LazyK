@@ -1,3 +1,27 @@
+The Lazy K source distribution has gotten hard to find, so I am
+reposting my modified version. Below the line is the original README.
+
+This source distribution is somewhat modified from the original:
+lazy.cpp has been substantially optimized. It now uses a copying
+garbage collector instead of reference counting. It has also been
+somewhat de-C++ified, due to personal preferences.
+
+lazy_orig.cpp is the original Lazy K interpreter.
+lazy2.c is my port of the C++ interpreter to C, as an intermediate step for
+my C0 port.
+lazy.c0 is a port to the L4 dialect of C0. C0 is a language used in CMU's
+intro programming courses, and the L4 dialect is used in the compiler design
+class. I made this port to be a test for student compilers.
+LazyK.hs is my haskell implementation of a Lazy K evaluator. It cheats.
+
+In eg/unlambda there are unlambda versions of all of the tests, since
+the C and C0 versions only support unlambda syntax.
+In test-data/ there are some word lists I used when benchmarking the sort
+test.
+
+-Michael Sullivan
+
+---------------------------------------------------------------------------
 This is Lazy K, which I am submitting to the Essies for consideration in the
 category of "most entertaining new Turing-complete language."
 
