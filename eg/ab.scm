@@ -5,4 +5,4 @@
 (lazy-def '(main input)
  '(Y (o (cons 65) (cons 66))) )
 
-(print-as-unlambda (laze 'main))
+(print-as-cc (laze 'main))

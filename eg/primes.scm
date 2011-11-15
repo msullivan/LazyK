@@ -55,4 +55,4 @@
       (cons (car prev) (1+ (cdr prev))) ))
 
 
-(print-as-unlambda (laze 'print-primes))
+(print-as-cc (laze 'print-primes))

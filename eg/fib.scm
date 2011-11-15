@@ -7,4 +7,4 @@
    (lambda (self a b)
      (a (cons 10 (self self b (o a b)))) )))
 
-(print-as-unlambda (laze 'fib))
+(print-as-iota (laze 'fib))
