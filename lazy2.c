@@ -1,7 +1,32 @@
-// Lazy K interpreter in C
+// Lazy K interpreter in C.
 // For usage see usage() function below.
-// Copyright 2002 Ben Rudiak-Gould. Distributed under the GPL.
-// Copyright 2011 Michael Sullivan.
+// Copyright 2002 Ben Rudiak-Gould, 2011 Michael Sullivan.
+// Distributed under the GPL.
+//
+// This is a C port of my modified Lazy K evaluator.
+// I needed to do this as an intermediate step in porting it
+// to C0. It is a simplified version that can only take one
+// input file and can only accept unlambda syntax. It can take
+// its input source either as a command line argument or on
+// standard input. If no argument is given, it will read an
+// unlambda style Lazy K program on stdin, then a mandatory
+// additional newline, and then begin interpreting it, using
+// the rest of stdin as input. Since when an unlambda program
+// ends is unambiguous, this works out fine.
+//
+// Updated notes:
+// - I rewrote the memory management system to use a semispace
+//   garbage collector instead of reference counting. This
+//   produced a modest performance gain, especially as the heap
+//   size is increased. As it turns out, dealing with roots,
+//   especially roots in a copying collector, is a huge pain.
+// - I added an actual I node to the combinator representation.
+//   This turned out to be a big performance win, since previously
+//   an unapplied I was represented as (SKK). Since I shows up
+//   a lot in the source code, this definitely hurt things.
+// - I did a bunch of other performance tuning which all in all
+//   sped the interpreter up by about 4 times. *Almost* as fast
+//   as my Haskell version!
 //
 // Implementation notes:
 //  - When Sxyz is reduced to (xz)(yz), both "copies" of z
@@ -77,7 +102,7 @@ struct Expr {
 	Expr *forward;
 	union {
 		Expr *arg1;
-		int numeric_arg1; // XXX
+		int numeric_arg1;
 	} u;
 	Expr *arg2;
 	Type type;
@@ -124,7 +149,6 @@ Expr SKSK = Expr2(S2, &KS, &cK);
 
 Expr cInc = Expr0(Inc);
 Expr cZero = Expr0(Num);
-
 
 
 // Roots
