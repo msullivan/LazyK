@@ -1,3 +1,5 @@
+{-#LANGUAGE FlexibleInstances, TypeSynonymInstances #-}
+
 module Main
 (main
 ) where 
@@ -18,22 +20,38 @@ data Atom = S | K | I | Inc | Num Int | Thunk Int
 type Spine = [Atom]
 type Thunk = (Spine, Bool)
 
+class Monad m => TweetMachine m where
+  nameThunk :: Spine -> m Id
+  lookupThunk :: Id -> m Thunk
+  updateThunk :: Id -> Thunk -> m ()
+  pullThunk :: Id -> m Spine
+
 type LTM = State (Id, M.IntMap Thunk)
-nameThunk :: Spine -> LTM Id
-nameThunk spine = do
-  (n, m) <- get
-  put (n+1, m)
-  return n
-lookupThunk :: Id -> LTM Thunk
-lookupThunk id = do
-  (n, m) <- get
-  return ((M.!) m id)
-updateThunk :: Id -> Thunk -> LTM ()
-updateThunk id thunk = do
-  (n, m) <- get
-  let m' = M.insert id thunk m
-  put (n, m')
-newThunk :: Spine -> LTM Id
+instance TweetMachine LTM where
+  nameThunk spine = do
+    (n, m) <- get
+    put (n+1, m)
+    return n
+
+  lookupThunk id = do
+    (n, m) <- get
+    return ((M.!) m id)
+
+  updateThunk id thunk = do
+    (n, m) <- get
+    let m' = M.insert id thunk m
+    put (n, m')
+
+  pullThunk id = do
+    (spine, evaluated) <- lookupThunk id
+    if evaluated then return spine
+      else do
+      spine' <- evalSpine spine
+      updateThunk id (spine', True)
+      return spine'
+
+
+newThunk :: TweetMachine m => Spine -> m Id
 newThunk spine = do
   id <- nameThunk spine
   updateThunk id (spine, False)
@@ -43,7 +61,7 @@ spineify :: K.Expr -> [K.Expr]
 spineify (K.App e1 e2) = spineify e1 ++ [e2]
 spineify e = [e]
 
-flattenExpr :: K.Expr -> LTM Atom
+flattenExpr :: TweetMachine m => K.Expr -> m Atom
 flattenExpr (e @ (K.App _ _)) = do
   spine <- mapM flattenExpr (spineify e)
   id <- newThunk spine
@@ -52,16 +70,7 @@ flattenExpr K.S = return S
 flattenExpr K.K = return K
 flattenExpr K.I = return I
 
-pullThunk :: Id -> LTM Spine
-pullThunk id = do
-  (spine, evaluated) <- lookupThunk id
-  if evaluated then return spine
-    else do
-    spine' <- evalSpine spine
-    updateThunk id (spine', True)
-    return spine'
-
-stepSpine :: Spine -> LTM Spine
+stepSpine :: TweetMachine m => Spine -> m Spine
 stepSpine (I:e:es) = return $ e : es
 stepSpine (K:e1:e2:es) = return $ e1 : es
 stepSpine (S:e1:e2:e3:es) = do
@@ -73,19 +82,19 @@ stepSpine (Num n:Inc:es) = return $ Num (n+1) : es
 stepSpine (Thunk id:es) = do
   spine <- pullThunk id
   return $ spine ++ es
-stepSpine spine = return spine  
+stepSpine spine = return spine
 
-evalSpine :: Spine -> LTM Spine
+evalSpine :: TweetMachine m => Spine -> m Spine
 evalSpine spine = do
   spine' <- stepSpine spine
   if spine == spine' then return spine' else evalSpine spine'
 
 flattener :: K.Expr -> (Atom, M.IntMap Thunk)
 flattener e = 
-  let (atom, (_, map)) = runState (flattenExpr e) (0, M.empty)
+  let (atom, (n, map)) = runState (flattenExpr e) (0 :: Int, M.empty)
   in (atom, map)
 
-runCombProgram :: K.Expr -> LTM [Int]
+runCombProgram :: TweetMachine m => K.Expr -> m [Int]
 runCombProgram comb = do
   root <- flattenExpr (K.App comb K.I)
   cdr_id <- newThunk [K, I]  
@@ -98,7 +107,7 @@ runCombProgram comb = do
       cdr a = [a, Thunk cdr_id]
     in run root
 
-evalCombNumber :: K.Expr -> LTM Int
+evalCombNumber :: TweetMachine m => K.Expr -> m Int
 evalCombNumber comb = do
   root <- flattenExpr comb
   [Num n] <- evalSpine [root, Inc, Num 0]
