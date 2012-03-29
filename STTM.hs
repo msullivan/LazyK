@@ -87,7 +87,7 @@ flattener e =
 
 runCombProgram :: K.Expr -> LTM [Int]
 runCombProgram comb = do
-  res <- flattenExpr (K.App comb K.I)
+  root <- flattenExpr (K.App comb K.I)
   cdr_id <- newThunk [K, I]  
   let run a = do
         [Num n] <- evalSpine (value a)
@@ -96,12 +96,22 @@ runCombProgram comb = do
         return $ n : rest
       value a = [a, K, Inc, Num 0]
       cdr a = [a, Thunk cdr_id]
-    in run res
+    in run root
+
+evalCombNumber :: K.Expr -> LTM Int
+evalCombNumber comb = do
+  root <- flattenExpr comb
+  [Num n] <- evalSpine [root, Inc, Num 0]
+  return n
+
+runLTM :: LTM a -> a
+runLTM m = evalState m (0, M.empty)
 
 main :: IO ()
 main = do
   [sourcePath] <- getArgs
   source <- readFile sourcePath
   let comb = K.parse source
-  mapM_ K.outputCharacter $ evalState (runCombProgram comb) (0, M.empty)
+  --mapM_ K.outputCharacter $ runLTM (runCombProgram comb)
+  putStrLn (show (runLTM $ evalCombNumber comb))
   
