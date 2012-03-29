@@ -3,8 +3,8 @@ lazy
 lazy2
 lazy3
 LazyK
-LazyK.hi
-LazyK.o
+*.hi
+*.o
 cachegrind.out.*
 gmon.out
 *.gcov

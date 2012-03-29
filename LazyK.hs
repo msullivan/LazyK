@@ -7,16 +7,15 @@
 -- This supports all of the different syntaxes for Lazy K, but can
 -- only take one source file name as input.
 
-module Main
-(main,
- parse
+module LazyK
+(parse,
+ runFile
 ) where
 
 import Data.Array
 import Data.Char
 import Data.List
 import System.Exit
-import System(getArgs)
 
 -- Really, every Comb should just be a function Comb -> Comb.
 -- However, we need to be able to extract an Int from a church numeral,
@@ -163,8 +162,3 @@ runString = runComb . exprToComb . parse
 
 runFile :: String -> IO ()
 runFile sourcePath = readFile sourcePath >>= runString
-
-main :: IO ()
-main = do
-  [sourcePath] <- getArgs
-  runFile sourcePath
