@@ -9,7 +9,9 @@
 
 module LazyK
 (parse,
- runFile
+ runFile,
+ outputCharacter,
+ Expr(..)
 ) where
 
 import Data.Array

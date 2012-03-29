@@ -3,6 +3,7 @@ lazy
 lazy2
 lazy3
 LazyK
+STTM
 *.hi
 *.o
 cachegrind.out.*
