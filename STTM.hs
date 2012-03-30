@@ -284,10 +284,10 @@ sttm_main = do
   login : restArgs <- getArgs
   let isWorker = null restArgs
   tweetListMvar <- newMVar []
+  twitterLogin login
   let monitor = monitorStream isWorker tweetListMvar login
   if isWorker then monitor else do
     forkIO monitor
-    twitterLogin login
     source <- readFile (head restArgs)
     let comb = K.parse source
     answer <- runSTTM login tweetListMvar $ evalCombNumber comb
