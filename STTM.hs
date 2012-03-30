@@ -5,8 +5,6 @@ module Main
 ) where 
 
 import qualified LazyK as K
-import Data.Array
-import Data.Char
 import Data.List
 import System.Exit
 import System(getArgs)
@@ -18,11 +16,6 @@ import qualified Data.Map as M
 import Data.Maybe
 
 import Web.Codec.URLEncoder
-import Web.Twitter hiding (tweet)
---import Web.Twitter.Post
-import Web.Twitter.Fetch
-import Web.Twitter.Monad hiding (liftIO)
-import Web.Twitter.Types
 import Data.Hash.MD5
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Base64.URL as Base64
@@ -56,7 +49,6 @@ readAtom "I" = I
 readAtom "+" = Inc
 readAtom s = if "#t" `isPrefixOf` s then Thunk (drop 2 s)
              else Num (read s)
-
 
 findSubstr s t =
   if s `isPrefixOf` t then 0 else 1 + findSubstr s (tail t)
@@ -274,20 +266,6 @@ twitterLogin user =
 tweet :: String -> String -> IO ExitCode
 tweet user message =
   rawSystem "./twittering/tweet.sh" [user, encodeString message]
-
-{-
-runTweet = runTM (AuthUser {authUserName = "", authUserPass = "" })
-userSearch :: String -> IO [String]
-userSearch user = do
-  result <- runTweet (getUserTimeline (Just user) Nothing Nothing)
-  return $ map show result
-main :: IO ()
-main = do
-  [login] <- getArgs
-  statuses <- userSearch ("sttm000" ++ login)
-  mapM_ putStrLn statuses
-  return ()
--}
 
 ltm_main_program = do
   [sourceFile] <- getArgs
