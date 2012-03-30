@@ -12,3 +12,4 @@ gmon.out
 *.gcda
 *.gcno
 cookies_*.txt
+auth_token_*.txt
