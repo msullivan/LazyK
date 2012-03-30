@@ -10,7 +10,10 @@ import Data.Char
 import Data.List
 import System.Exit
 import System(getArgs)
+import System.IO
+import Control.Applicative
 import Control.Monad.State
+import Control.Monad.RWS
 import qualified Data.Map as M
 import Data.Maybe
 
@@ -20,8 +23,16 @@ import Web.Twitter hiding (tweet)
 import Web.Twitter.Fetch
 import Web.Twitter.Monad hiding (liftIO)
 import Web.Twitter.Types
+import Data.Hash.MD5
+import qualified Data.Binary as Binary
+import qualified Data.ByteString.Base64.URL as Base64
+import qualified Data.ByteString.Lazy as BL
+import qualified Data.ByteString as BS
+import qualified Text.JSON as JS
+
 
 import System.Process
+import Control.Concurrent
 
 type Id = String
 data Atom = S | K | I | Inc | Num Int | Thunk Id
@@ -38,10 +49,36 @@ instance Show Atom where
   show (Num i) = show i
   show (Thunk i) = "#t" ++ i
 
-showUpdate :: Id -> Thunk -> String
-showUpdate id (spine, updated) =
+readAtom :: String -> Atom
+readAtom "S" = S
+readAtom "K" = K
+readAtom "I" = I
+readAtom "+" = Inc
+readAtom s = if "#t" `isPrefixOf` s then Thunk (drop 2 s)
+             else Num (read s)
+
+readTweet :: String -> (Id, Thunk)
+readTweet s =
+  let parts = words s
+      up_id : spine_parts = take (length parts - 1) parts
+      (up, id) = splitAt 2 up_id
+      spine = map readAtom spine_parts
+      evaled = up == "#n"
+  in (id, (spine, evaled))
+
+showSpine :: Spine -> String
+showSpine spine = intercalate " " (map show spine)
+
+showThunk :: Id -> Thunk -> String
+showThunk id (spine, updated) =
   "#" ++ op ++ id ++ " " ++ intercalate " " (map show spine) ++ " #sttm"
   where op = if updated then "u" else "n"
+
+makeStringHash :: String -> String
+makeStringHash =
+  read . show . Base64.encode . BS.concat . BL.toChunks . Binary.encode . unabcd . md5 . Str
+  where unabcd (ABCD a) = a
+
 
 class Monad m => TweetMachine m where
   nameThunk :: Spine -> m Id
@@ -70,22 +107,21 @@ instance TweetMachine LTM where
       return spine'
 
 
-type STTM = StateT (Int, M.Map Id Thunk) IO
+type STTM = RWST (String, MVar [String]) () (M.Map Id Thunk) IO
 instance TweetMachine STTM where
   nameThunk spine = do
-    (n, m) <- get
-    put (n+1, m)
-    return (show n)
+    return $ take 4 $ makeStringHash $ showSpine spine
 
   publishThunk id thunk = do
-    (n, m) <- get
+    m <- get
+    (login, _) <- ask
     let m' = M.insert id thunk m
-    liftIO $ putStrLn (showUpdate id thunk)
-    --liftIO $ tweet "0001" (showUpdate id thunk)
-    put (n, m')
+    liftIO $ putStrLn (showThunk id thunk)
+    liftIO $ tweet login (showThunk id thunk)
+    put m'
 
   pullThunk id = do
-    (n, m) <- get
+    m <- get
     let (spine, evaluated) = ((M.!) m id)
     if evaluated then return spine
       else do
@@ -173,8 +209,8 @@ evalCombNumber comb = do
 runLTM :: LTM a -> a
 runLTM m = evalState m (0, M.empty)
 
-runSTTM :: STTM a -> IO a
-runSTTM m = evalStateT m (0, M.empty)
+runSTTM :: String -> MVar [String] -> STTM a -> IO a
+runSTTM login mvar m = fst <$> evalRWST m (login, mvar) M.empty
 
 
 twitterLogin :: String -> IO ExitCode
@@ -189,7 +225,33 @@ runTweet = runTM (AuthUser {authUserName = "", authUserPass = "" })
 userSearch :: String -> IO [String]
 userSearch user = do
   result <- runTweet (getUserTimeline (Just user) Nothing Nothing)
-  return $ map statusText result
+  return $ map show result
+
+
+monitorStream :: Bool -> MVar [String] -> String -> IO ()
+monitorStream isWorker mvar id = do
+  (stdin, stdout, stderr, proc) <-
+    runInteractiveProcess "curl"
+    ["-s", "-N", "-d", "@twittering/following",
+     "https://stream.twitter.com/1/statuses/filter.json",
+     "-usttm" ++ id ++ ":buttsquid"] Nothing Nothing
+  hSetBinaryMode stdout False
+  loop stdout
+  where loop h = do
+          line <- hGetLine h
+          handleMsg (JS.decode line)
+          loop h
+        handleMsg (JS.Error _) = return ()
+        handleMsg (JS.Ok (JS.JSObject obj)) = do
+          let JS.JSString smsg = fromJust $ lookup "text" $ JS.fromJSObject obj
+          let msg = JS.fromJSString smsg
+          contents <- takeMVar mvar
+          putMVar mvar (msg : contents)
+          if "#sttm" `isInfixOf` msg then
+            processThunk (readTweet msg) else
+            putStrLn $ "got nonsense: " ++ msg
+        processThunk thunk = putStrLn $ "got: " ++ show thunk
+
 
 main2 :: IO ()
 main2 = do
@@ -197,17 +259,23 @@ main2 = do
   --tweet "0001" "argh testing! #sttm"
   --let search_ctx = searchFor { searchHashTag = "sttm" }
   --result <- runTweet (search search_ctx)
-  statuses <- userSearch "sttm0001"
+  statuses <- userSearch "sttm0002"
   mapM_ putStrLn statuses
   --putStrLn (show result)
   return ()
 
 
+
 main = do
-  [sourcePath] <- getArgs
-  --twitterLogin "0001"
-  source <- readFile sourcePath
-  let comb = K.parse source
+  login : restArgs <- getArgs
+  let isWorker = null restArgs
+  tweetListMvar <- newMVar []
+  let monitor = monitorStream isWorker tweetListMvar login
   --mapM_ K.outputCharacter $ runLTM (runCombProgram comb)
-  answer <- runSTTM $ evalCombNumber comb
-  putStrLn (show answer)
+  if isWorker then monitor else do
+    forkIO monitor
+    twitterLogin login
+    source <- readFile (head restArgs)
+    let comb = K.parse source
+    answer <- runSTTM login tweetListMvar $ evalCombNumber comb
+    putStrLn (show answer)

@@ -27,7 +27,7 @@ type StatusId    = String
 data Format = FormatXML | FormatJSON | FormatRSS | FormatAtom
 
 newtype UserID = UserID { userID :: UserId }
-
+               deriving (Show)
 -- | @Status@ is the record type used to represent a ''tweet'',
 -- a status update by a user.
 data Status
@@ -42,7 +42,7 @@ data Status
      , statusFavorite      :: Maybe Bool
      , statusUser          :: User
      }
-
+     deriving (Show)
 nullStatus :: Status
 nullStatus = Status
      { statusCreated       = ""
@@ -68,6 +68,7 @@ data User
      , userProtected       :: Maybe Bool
      , userFollowers       :: Maybe Int
      }
+  deriving (Show)
 
 nullUser :: User
 nullUser = User
