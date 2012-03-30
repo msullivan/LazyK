@@ -11,3 +11,4 @@ gmon.out
 *.gcov
 *.gcda
 *.gcno
+cookies_*.txt

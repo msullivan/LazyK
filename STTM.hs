@@ -14,6 +14,15 @@ import Control.Monad.State
 import qualified Data.IntMap as M
 import Data.Maybe
 
+import Web.Codec.URLEncoder
+import Web.Twitter hiding (tweet)
+--import Web.Twitter.Post
+import Web.Twitter.Fetch
+import Web.Twitter.Monad
+import Web.Twitter.Types
+
+import System.Process
+
 type Id = Int
 data Atom = S | K | I | Inc | Num Int | Thunk Int
           deriving (Show, Ord, Eq)
@@ -116,8 +125,33 @@ evalCombNumber comb = do
 runLTM :: LTM a -> a
 runLTM m = evalState m (0, M.empty)
 
+twitterLogin :: String -> IO ExitCode
+twitterLogin user =
+  rawSystem "./twittering/login.sh" [user]
+
+tweet :: String -> String -> IO ExitCode
+tweet user message =
+  rawSystem "./twittering/tweet.sh" [user, encodeString message]
+runTweet = runTM (AuthUser {authUserName = "", authUserPass = "" })
+
+userSearch :: String -> IO [String]
+userSearch user = do
+  result <- runTweet (getUserTimeline (Just user) Nothing Nothing)
+  return $ map statusText result
+
 main :: IO ()
 main = do
+  --twitterLogin "0001"
+  --tweet "0001" "argh testing! #sttm"
+  --let search_ctx = searchFor { searchHashTag = "sttm" }
+  --result <- runTweet (search search_ctx)
+  statuses <- userSearch "sttm0001"
+  mapM_ putStrLn statuses
+  --putStrLn (show result)
+  return ()
+
+
+main2 = do
   [sourcePath] <- getArgs
   source <- readFile sourcePath
   let comb = K.parse source
