@@ -89,9 +89,10 @@ outputCharacter n = putChar (chr n)
 -- runComb is what drives everything
 runComb :: Comb -> IO ()
 runComb c = do
-  input <- getContents
-  let c' = c $$ transformInput input
-  mapM_ outputCharacter $ transformOutput c'
+  --input <- getContents
+  --let c' = c $$ transformInput input
+  --mapM_ outputCharacter $ transformOutput c'
+  putStrLn (show (fromChurchNumeral c))
 
 ---- An expression language with a conventional representation and a parser for it.
 data Expr = S | K | I | App Expr Expr

@@ -14,6 +14,7 @@ import Control.Monad.State
 import Control.Monad.Reader
 import qualified Data.Map as M
 import Data.Maybe
+import Debug.Trace
 
 import Web.Codec.URLEncoder
 import Data.Hash.MD5
@@ -95,7 +96,8 @@ instance TweetMachine LTM where
   publishThunk id thunk = do
     (n, m) <- get
     let m' = M.insert id thunk m
-    put (n, m')
+        m'' = trace ("publish: " ++ show thunk) m'
+    put (n, m'')
 
   pullThunk id = do
     (n, m) <- get
@@ -103,8 +105,9 @@ instance TweetMachine LTM where
     if evaluated then return spine
       else do
       spine' <- evalSpine spine
-      updateThunk id spine'
-      return spine'
+      let spine'' = trace ("pull: " ++ id) spine'
+      updateThunk id spine''
+      return spine''
 
 
 type STTM = ReaderT (String, MVar [String]) IO
@@ -293,4 +296,4 @@ sttm_main = do
     answer <- runSTTM login tweetListMvar $ evalCombNumber comb
     putStrLn (show answer)
 
-main = sttm_main
+main = ltm_main
