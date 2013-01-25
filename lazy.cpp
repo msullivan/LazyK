@@ -346,10 +346,10 @@ static inline Expr *drop_i1(Expr *cur) {
 
 static Expr *partial_eval(Expr *node);
 
-// This function modifies the object in-place so that
-// all references to it see the new version.
-// An additional root gets past in by reference so that we can root it
-// if we need to. I don't really like it but it is fast.
+// This function modifies the object in-place so that all references
+// to it see the new version.  An additional root gets passed in by
+// reference so that we can root it if we need to. I don't really like
+// it but it is fast.
 static inline Expr *partial_eval_primitive_application(Expr *e, Expr *&prev) {
 	INC_COUNTER(prim_apps);
 
@@ -673,7 +673,7 @@ int main(int argc, char** argv) {
 	for (unsigned i = 0; i < sizeof(cached_church_chars)/sizeof(cached_church_chars[0]); i++) {
 		make_church_char(i);
 	}
-	
+
 	Expr* e = &cI;
 	for (int i=1; i<argc; ++i) {
 		if (argv[i][0] == '-') {
