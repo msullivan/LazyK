@@ -336,11 +336,14 @@ Expr *make_church_char(int ch) {
 static inline Expr *drop_i1(Expr *cur) {
 	// Seperating out this into two checks gets a real speed win.
 	// Presumably due to branch prediction.
+	Expr *orig = cur;
 	if (cur->type == I1) {
 		do {
 			cur = cur->arg1;
 		} while (cur->type == I1);
+		orig->arg1 = cur;
 	}
+
 	return cur;
 }
 
@@ -353,7 +356,7 @@ static Expr *partial_eval(Expr *node);
 static inline Expr *partial_eval_primitive_application(Expr *e, Expr *&prev) {
 	INC_COUNTER(prim_apps);
 
-	e->arg2 = drop_i1(e->arg2); // do it in place to free up space
+	//e->arg2 = drop_i1(e->arg2); // do it in place to free up space
 	Expr *lhs = e->arg1, *rhs = e->arg2;
 
 	switch (lhs->type) {
