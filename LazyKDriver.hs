@@ -3,7 +3,7 @@ module Main
 ) where
 
 import LazyK
-import System(getArgs)
+import System.Environment(getArgs)
 
 main :: IO ()
 main = do
